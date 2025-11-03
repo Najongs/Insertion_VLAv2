@@ -5,6 +5,20 @@ __pycache__/
 
 # C extensions
 *.so
+dataset/
+.claude/
+wandb/
+checkpoints/
+inference_session*/
+async_inference_*/
+training_data/
+*_point/
+Eye_trocar/
+
+# Hugging Face uploads and downloads
+hf_upload_temp/
+downloaded_models/
+*.pt.lock
 
 # Distribution / packaging
 .Python
