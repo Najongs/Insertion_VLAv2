@@ -1,9 +1,9 @@
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 NUM_GPUS=4
 
-torchrun --nproc_per_node=4 training/A5st_VLA_TRAIN_Unified.py \
-    --model-type regression \
-    --mode cache
+# torchrun --nproc_per_node=4 training/A5st_VLA_TRAIN_Unified.py \
+#     --model-type regression \
+#     --mode cache
 
 # torchrun --nproc_per_node=4 training/A5st_VLA_TRAIN_Unified.py \
 #     --model-type diffusion \
@@ -28,7 +28,7 @@ torchrun --nproc_per_node=4 training/A5st_VLA_TRAIN_Unified.py \
 
 torchrun --nproc_per_node=$NUM_GPUS \
     --master_port=29500 \
-    training/A5st_VLA_TRAIN_Unified.py \
+    TRAIN_Unified.py \
     --model-type regression \
     --mode train \
     --dataset_dir /home/najo/NAS/VLA/dataset \
@@ -45,7 +45,7 @@ torchrun --nproc_per_node=$NUM_GPUS \
     --image_resize_width 640 \
     --val_split 0.05 \
     --num_workers 8 \
-    --resume /home/najo/NAS/VLA/Insertion_VLA/checkpoints/regression_best.pt
+    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/regression_latest.pt
 
 
 

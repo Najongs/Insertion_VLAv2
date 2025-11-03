@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from vla_datasets.Total_Dataset import collate_fn
+from vla_datasets.unified_dataset import unified_collate_fn
 
 # =====================================
 # 1️⃣ Action Expert (Temporal Decoder)

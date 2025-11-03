@@ -77,12 +77,16 @@ torch.backends.cudnn.benchmark = False
 torch.use_deterministic_algorithms(True, warn_only=True)
 torch.set_float32_matmul_precision("high")
 
-# Import models and datasets
-from models.model_with_sensor_diffusion import QwenVLAWithSensorDiffusion
-from models.model_with_sensor import Not_freeze_QwenVLAWithSensor
-from vla_datasets.IntegratedDataset import collate_fn_with_sensor
-from vla_datasets.AsyncIntegratedDataset import AsyncInsertionMeca500DatasetWithSensor, async_collate_fn_with_sensor
-from vla_datasets.NewAsyncDataset import NewAsyncInsertionDataset
+# Import unified models and datasets
+from models.unified_model import QwenVLAUnified
+from vla_datasets.unified_dataset import (
+    UnifiedVLADataset,
+    create_unified_dataloader,
+    unified_collate_fn,
+    AsyncInsertionMeca500DatasetWithSensor,
+    NewAsyncInsertionDataset,
+    async_collate_fn_with_sensor,
+)
 
 # Import cache builder
 import importlib.util
@@ -273,7 +277,7 @@ def build_dataloaders(args, rank, world_size, full_dataset=None, dataset_weights
         # "/home/najo/NAS/VLA/dataset/part1/ZED_Captures_*th",  # Commented out - no data.pkl
     ]
 
-    new_dataset_root = "/home/najo/NAS/VLA/Insertion_VLA/Make_dataset/New_dataset"
+    new_dataset_root = "/home/najo/NAS/VLA/dataset/New_dataset"
 
     # --------------------------
     # Weight configuration
@@ -847,7 +851,7 @@ def build_datasets(args, rank):
     ]
 
     # New dataset path (3x weight)
-    new_dataset_path = Path("/home/najo/NAS/VLA/Insertion_VLA/Make_dataset/New_dataset")
+    new_dataset_path = Path("/home/najo/NAS/VLA/dataset/New_dataset")
 
     # Determine VLM reuse count based on model type
     # Note: All datasets use sensor_window_size=650 (pre-processed)
@@ -1078,9 +1082,9 @@ def main():
                 self.processor = processor
                 self.cache_dir = cache_dir
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
-                self._cache_path = Not_freeze_QwenVLAWithSensor._cache_path.__get__(self)
-                self._enforce_cache_limit = Not_freeze_QwenVLAWithSensor._enforce_cache_limit.__get__(self)
-                self._atomic_save = Not_freeze_QwenVLAWithSensor._atomic_save
+                self._cache_path = QwenVLAUnified._cache_path.__get__(self)
+                self._enforce_cache_limit = QwenVLAUnified._enforce_cache_limit.__get__(self)
+                self._atomic_save = QwenVLAUnified._atomic_save
             def eval(self):
                 self.vl_model.eval()
                 return self
@@ -1111,46 +1115,34 @@ def main():
     if rank == 0:
         print("⏳ Initializing model for training...")
 
-    # Initialize model based on type
-    if args.model_type == 'diffusion':
-        model = QwenVLAWithSensorDiffusion(
-            vl_model_name=vl_model_name,
-            action_dim=7,
-            horizon=8,
-            hidden_dim=1024,
-            sensor_enabled=args.sensor_enabled,
-            fusion_strategy=args.fusion_strategy,
-            diffusion_timesteps=args.diffusion_timesteps,
-        ).to(device)
+    # Initialize unified model based on type
+    model = QwenVLAUnified(
+        model_type=args.model_type,  # 'diffusion' or 'regression'
+        vl_model_name=vl_model_name,
+        action_dim=7,
+        horizon=8,
+        hidden_dim=1024,
+        sensor_enabled=args.sensor_enabled,
+        sensor_input_channels=1026,
+        sensor_temporal_length=65,
+        sensor_output_dim=3072,
+        fusion_strategy=args.fusion_strategy,
+        diffusion_timesteps=args.diffusion_timesteps if args.model_type == 'diffusion' else 100,
+        finetune_vl='none',
+        image_resize_height=args.image_resize_height,
+        image_resize_width=args.image_resize_width,
+        device_map=None,  # Don't use device_map with DDP
+    )
 
-        if rank == 0:
-            print(f"   Model: QwenVLAWithSensorDiffusion")
+    # Manually move to device (required for DDP)
+    model = model.to(device)
+
+    if rank == 0:
+        print(f"   Model: QwenVLAUnified ({args.model_type})")
+        print(f"   Model moved to device: {device}")
+        if args.model_type == 'diffusion':
             print(f"   Diffusion timesteps: {args.diffusion_timesteps}")
-    else:  # regression
-        model = Not_freeze_QwenVLAWithSensor(
-            vl_model_name=vl_model_name,
-            action_dim=7,
-            horizon=8,
-            hidden_dim=1024,
-            finetune_vl='none',
-            sensor_enabled=args.sensor_enabled,
-            sensor_input_channels=1026,
-            sensor_temporal_length=65,
-            sensor_output_dim=3072,
-            fusion_strategy=args.fusion_strategy,
-            image_resize_height=args.image_resize_height,
-            image_resize_width=args.image_resize_width,
-            device_map=None,  # Don't use device_map with DDP
-        )
-
-        # Manually move to device (required for DDP)
-        model = model.to(device)
-        
-        if rank == 0:
-            print(f"   Model moved to device: {device}")
-
-        if rank == 0:
-            print(f"   Model: Not_freeze_QwenVLAWithSensor (regression)")
+        else:
             print(f"   Image resize: {args.image_resize_width}x{args.image_resize_height}")
 
     # DDP
