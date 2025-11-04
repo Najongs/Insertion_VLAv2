@@ -1,11 +1,11 @@
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 NUM_GPUS=4
 
-# torchrun --nproc_per_node=4 training/A5st_VLA_TRAIN_Unified.py \
+# torchrun --nproc_per_node=4 TRAIN_Unified.py \
 #     --model-type regression \
 #     --mode cache
 
-# torchrun --nproc_per_node=4 training/A5st_VLA_TRAIN_Unified.py \
+# torchrun --nproc_per_node=4 TRAIN_Unified.py \
 #     --model-type diffusion \
 #     --mode cache
 
@@ -23,7 +23,7 @@ NUM_GPUS=4
 #         --fusion_strategy concat \
 #         --val_split 0.1 \
 #         --num_workers 8 \
-#         --resume /home/najo/NAS/VLA/Insertion_VLA/checkpoints/diffusion_latest.pt
+#         --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/diffusion_latest.pt
 
 
 torchrun --nproc_per_node=$NUM_GPUS \

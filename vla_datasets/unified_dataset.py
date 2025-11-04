@@ -6,7 +6,7 @@ Unified VLA Dataset (통합 데이터셋)
 2. New Format (NewAsyncInsertionDataset): metadata.json + sensor_data.npz 기반
 
 Key Features:
-- VL feature caching support
+- VL feature caching support (완전 고정 캐싱)
 - Memory-optimized with mmap
 - Weighted random sampling
 - Async VLM update pattern (reuse_count)
@@ -52,6 +52,12 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, WeightedRandomSampler
 from torch.utils.data.distributed import DistributedSampler
+
+# Import VLA Cache Manager
+import sys
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+from vla_cache_manager import get_cache_manager
 
 
 # =====================================
@@ -188,6 +194,42 @@ class UnifiedVLADataset(Dataset):
         else:
             self.sensor_data = np.zeros((T, 1026), dtype=np.float32)
 
+        # Robot states (joint + pose) - for old format, try to load if available
+        # Try NPZ first (faster), fallback to CSV
+        npz_path = self.data_dir / "robot_states.npz"
+        csv_path = self.data_dir / "robot_states.csv"
+
+        if npz_path.exists():
+            try:
+                with np.load(npz_path) as data:
+                    self.robot_states = data['robot_states'].astype(np.float32)  # (N, 12)
+                    self.joints = data['joints'].astype(np.float32) if 'joints' in data else self.robot_states[:, :6]
+                    self.poses = data['poses'].astype(np.float32) if 'poses' in data else self.robot_states[:, 6:]
+                self.has_robot_states = True
+                print(f"   ✅ Loaded robot states from NPZ: {self.robot_states.shape}")
+            except Exception as e:
+                print(f"⚠️ Could not load robot states from {npz_path}: {e}")
+                self.robot_states = np.zeros((T, 12), dtype=np.float32)
+                self.has_robot_states = False
+        elif csv_path.exists():
+            joint_cols = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+            pose_cols = ['pose_x', 'pose_y', 'pose_z', 'pose_a', 'pose_b', 'pose_r']
+            use_cols = joint_cols + pose_cols
+            try:
+                print(f"   ⚠️ Loading robot states from CSV (slow). Consider converting to NPZ.")
+                df = pd.read_csv(csv_path, usecols=use_cols)
+                self.joints = df[joint_cols].to_numpy(dtype=np.float32)
+                self.poses = df[pose_cols].to_numpy(dtype=np.float32)
+                self.robot_states = np.concatenate([self.joints, self.poses], axis=1)  # (N, 12)
+                self.has_robot_states = True
+            except Exception as e:
+                print(f"⚠️ Could not load robot states from {csv_path}: {e}")
+                self.robot_states = np.zeros((T, 12), dtype=np.float32)
+                self.has_robot_states = False
+        else:
+            self.robot_states = np.zeros((T, 12), dtype=np.float32)
+            self.has_robot_states = False
+
         del data
         gc.collect()
 
@@ -225,16 +267,54 @@ class UnifiedVLADataset(Dataset):
         self.sensor_npz = None
         self._load_sensor_metadata()
 
-        # Robot states (pose only)
+        # Robot states (joint + pose)
+        # Try NPZ first (faster), fallback to CSV
+        npz_path = self.data_dir / "robot_states.npz"
         csv_path = self.data_dir / "robot_states.csv"
-        use_cols = ['pose_x', 'pose_y', 'pose_z', 'pose_a', 'pose_b', 'pose_r']
-        try:
-            df = pd.read_csv(csv_path, usecols=use_cols)
-        except Exception as e:
-            print(f"⚠️ Fallback full read for {csv_path}: {e}")
-            df = pd.read_csv(csv_path)
-        self.poses = df[use_cols].to_numpy(dtype=np.float32)
-        self.num_poses = len(self.poses)
+
+        if npz_path.exists():
+            try:
+                with np.load(npz_path) as data:
+                    self.robot_states = data['robot_states'].astype(np.float32)  # (N, 12)
+                    self.joints = data['joints'].astype(np.float32) if 'joints' in data else self.robot_states[:, :6]
+                    self.poses = data['poses'].astype(np.float32) if 'poses' in data else self.robot_states[:, 6:]
+                self.num_poses = len(self.poses)
+                self.has_robot_states = True
+                print(f"   ✅ Loaded robot states from NPZ: {self.robot_states.shape}")
+            except Exception as e:
+                print(f"⚠️ Could not load robot states from {npz_path}: {e}")
+                # Fallback to zeros
+                self.robot_states = np.zeros((1, 12), dtype=np.float32)
+                self.joints = np.zeros((1, 6), dtype=np.float32)
+                self.poses = np.zeros((1, 6), dtype=np.float32)
+                self.num_poses = 1
+                self.has_robot_states = False
+        elif csv_path.exists():
+            joint_cols = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+            pose_cols = ['pose_x', 'pose_y', 'pose_z', 'pose_a', 'pose_b', 'pose_r']
+            use_cols = joint_cols + pose_cols
+            try:
+                print(f"   ⚠️ Loading robot states from CSV (slow). Consider converting to NPZ.")
+                df = pd.read_csv(csv_path, usecols=use_cols)
+            except Exception as e:
+                print(f"⚠️ Fallback full read for {csv_path}: {e}")
+                df = pd.read_csv(csv_path)
+
+            # Store joint and pose data separately
+            self.joints = df[joint_cols].to_numpy(dtype=np.float32)  # (N, 6)
+            self.poses = df[pose_cols].to_numpy(dtype=np.float32)    # (N, 6)
+            self.num_poses = len(self.poses)
+
+            # Combine joint + pose as robot state features (12 dims total)
+            self.robot_states = np.concatenate([self.joints, self.poses], axis=1)  # (N, 12)
+            self.has_robot_states = True
+        else:
+            print(f"⚠️ No robot states file found in {self.data_dir}")
+            self.robot_states = np.zeros((1, 12), dtype=np.float32)
+            self.joints = np.zeros((1, 6), dtype=np.float32)
+            self.poses = np.zeros((1, 6), dtype=np.float32)
+            self.num_poses = 1
+            self.has_robot_states = False
 
         # Compute actions from poses (will be done in __getitem__)
         self.actions = None  # Not pre-computed for new format
@@ -285,24 +365,32 @@ class UnifiedVLADataset(Dataset):
         return self.sensor_npz
 
     def _scan_vl_cache(self):
-        """Pre-scan VL cache files (optimization)"""
+        """Pre-scan VL cache files using VLACacheManager"""
+        from vla_cache_manager import get_cache_manager
+
+        cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
         self.vl_cache_files = {}
+        dataset_name = self.data_dir.name
 
         if self.format == 'old':
             # Old format: vlm_idx based on action steps
             for action_step in range(self.max_action_steps):
                 vlm_idx = min(action_step * self.action_step_size, len(self.actions) - 1)
                 if vlm_idx not in self.vl_cache_files:
-                    cache_path = self.cache_root / f"{self.data_dir.name}_vlm{vlm_idx}.pt"
-                    self.vl_cache_files[vlm_idx] = cache_path if cache_path.exists() else None
+                    if cache_mgr.cache_exists(dataset_name, vlm_idx):
+                        self.vl_cache_files[vlm_idx] = cache_mgr.get_cache_path(dataset_name, vlm_idx)
+                    else:
+                        self.vl_cache_files[vlm_idx] = None
 
         else:  # new format
             # New format: vlm_idx based on vlm_interval
             num_vlm_steps = (self._total_samples + self.vlm_reuse_count - 1) // self.vlm_reuse_count
             for i in range(num_vlm_steps):
                 vlm_idx = i * self.vlm_interval
-                cache_path = self.cache_root / f"{self.data_dir.name}_vlm{vlm_idx}.pt"
-                self.vl_cache_files[vlm_idx] = cache_path if cache_path.exists() else None
+                if cache_mgr.cache_exists(dataset_name, vlm_idx):
+                    self.vl_cache_files[vlm_idx] = cache_mgr.get_cache_path(dataset_name, vlm_idx)
+                else:
+                    self.vl_cache_files[vlm_idx] = None
 
         self.cache_found_count = sum(1 for p in self.vl_cache_files.values() if p is not None)
 
@@ -345,6 +433,9 @@ class UnifiedVLADataset(Dataset):
         sensor_end = sensor_start + self.sensor_window_size
         sensor_window = self._get_sensor_window_old(sensor_start, sensor_end)
 
+        # Robot state window
+        robot_state_window = self._get_robot_state_window_old(sensor_start, sensor_end)
+
         # Actions
         action_start = action_step * self.action_step_size
         action_end = action_start + self.horizon
@@ -357,8 +448,10 @@ class UnifiedVLADataset(Dataset):
             "images": image_paths,
             "vl_cache": vl_cache,
             "sensor_data": torch.from_numpy(sensor_window),
+            "robot_states": torch.from_numpy(robot_state_window),
             "actions": torch.from_numpy(actions),
             "has_sensor": bool(self.has_sensor),
+            "has_robot_states": bool(self.has_robot_states),
             "cache_key": cache_key,
             "vlm_idx": int(vlm_idx),
             "reuse_step": int(reuse_step),
@@ -377,6 +470,9 @@ class UnifiedVLADataset(Dataset):
         # Sensor window
         sensor_window = self._get_sensor_window_new(idx)
 
+        # Robot state window
+        robot_state_window = self._get_robot_state_window_new(idx)
+
         # Actions (computed from poses)
         actions = self._get_actions_new(action_step)
 
@@ -387,8 +483,10 @@ class UnifiedVLADataset(Dataset):
             "images": image_paths,
             "vl_cache": vl_cache,
             "sensor_data": torch.from_numpy(sensor_window),
+            "robot_states": torch.from_numpy(robot_state_window),
             "actions": torch.from_numpy(actions),
             "has_sensor": bool(self.has_sensor),
+            "has_robot_states": bool(self.has_robot_states),
             "cache_key": cache_key,
             "vlm_idx": int(vlm_idx),
             "reuse_step": int(reuse_step),
@@ -396,18 +494,24 @@ class UnifiedVLADataset(Dataset):
         }
 
     def _load_vl_or_images(self, vlm_idx):
-        """Load VL cache or return image paths"""
+        """Load VL cache or return image paths using VLACacheManager"""
+        from vla_cache_manager import get_cache_manager
+
         vl_cache = None
         image_paths = []
 
         cache_path = self.vl_cache_files.get(vlm_idx)
 
         if cache_path:
-            try:
-                vl_cache = torch.load(cache_path, map_location="cpu")
+            # Use cache manager for loading
+            cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
+            vl_cache = cache_mgr.load_cache(
+                dataset_name=self.data_dir.name,
+                vlm_idx=vlm_idx,
+                device="cpu"
+            )
+            if vl_cache is not None:
                 return vl_cache, None
-            except Exception as e:
-                print(f"⚠️ Failed to load VL cache {cache_path.name}: {e}")
 
         # Fallback to image paths
         if isinstance(self.images, dict):
@@ -455,6 +559,43 @@ class UnifiedVLADataset(Dataset):
             sensor_window = np.concatenate([sensor_window, pad], axis=0)
 
         return sensor_window
+
+    def _get_robot_state_window_old(self, start, end):
+        """Get robot state window for old format (joint + pose: 12 dims)"""
+        if not self.has_robot_states:
+            return np.zeros((self.sensor_window_size, 12), dtype=np.float32)
+
+        T_robot = len(self.robot_states)
+        if T_robot == 0 or start >= T_robot:
+            return np.zeros((self.sensor_window_size, 12), dtype=np.float32)
+
+        rw = self.robot_states[start:min(end, T_robot)]
+        if rw.shape[0] < self.sensor_window_size:
+            pad = np.zeros((self.sensor_window_size - rw.shape[0], 12), dtype=np.float32)
+            return np.concatenate([rw, pad], axis=0)
+        return rw
+
+    def _get_robot_state_window_new(self, idx):
+        """Get robot state window for new format (joint + pose: 12 dims)"""
+        if not self.has_robot_states:
+            return np.zeros((self.sensor_window_size, 12), dtype=np.float32)
+
+        # Calculate robot state indices for the window
+        # Robot states are at 100Hz, we need to sample a window around current action
+        center_idx = idx * self.action_interval
+        start_idx = max(0, center_idx - self.sensor_window_size // 2)
+        end_idx = start_idx + self.sensor_window_size
+
+        # Clip to available data
+        end_idx = min(end_idx, len(self.robot_states))
+        rw = self.robot_states[start_idx:end_idx]
+
+        # Pad if necessary
+        if rw.shape[0] < self.sensor_window_size:
+            pad = np.zeros((self.sensor_window_size - rw.shape[0], 12), dtype=np.float32)
+            return np.concatenate([rw, pad], axis=0)
+
+        return rw
 
     def _get_actions_old(self, start, end):
         """Get actions for old format"""
@@ -523,8 +664,22 @@ def unified_collate_fn(batch):
             padded_sensors.append(sensor)
     sensor_data = torch.stack(padded_sensors, dim=0)
 
+    # Pad robot states to max length (same as sensor data)
+    robot_state_tensors = [b["robot_states"] for b in batch]
+    max_robot_len = max(t.shape[0] for t in robot_state_tensors)
+    padded_robot_states = []
+    for robot_state in robot_state_tensors:
+        if robot_state.shape[0] < max_robot_len:
+            pad = torch.zeros((max_robot_len - robot_state.shape[0], robot_state.shape[1]),
+                            dtype=robot_state.dtype)
+            padded_robot_states.append(torch.cat([robot_state, pad], dim=0))
+        else:
+            padded_robot_states.append(robot_state)
+    robot_states = torch.stack(padded_robot_states, dim=0)
+
     actions = torch.stack([b["actions"] for b in batch], dim=0)
     has_sensor_mask = torch.tensor([b["has_sensor"] for b in batch], dtype=torch.bool)
+    has_robot_states_mask = torch.tensor([b["has_robot_states"] for b in batch], dtype=torch.bool)
     cache_keys = [b["cache_key"] for b in batch]
     vlm_indices = [b["vlm_idx"] for b in batch]
     reuse_steps = [b["reuse_step"] for b in batch]
@@ -535,8 +690,10 @@ def unified_collate_fn(batch):
         "images": image_lists,
         "vl_cache": vl_features,
         "sensor_data": sensor_data,
+        "robot_states": robot_states,
         "actions": actions,
         "has_sensor_mask": has_sensor_mask,
+        "has_robot_states_mask": has_robot_states_mask,
         "cache_keys": cache_keys,
         "vlm_indices": vlm_indices,
         "reuse_steps": reuse_steps,
@@ -593,7 +750,7 @@ def create_unified_dataloader(
 
     # Load old format datasets
     if old_dataset_patterns:
-        print("📦 Loading old format datasets...")
+        # print("📦 Loading old format datasets...")
         for pattern in old_dataset_patterns:
             expanded_paths = glob.glob(pattern)
             for traj_dir in expanded_paths:
@@ -614,7 +771,7 @@ def create_unified_dataloader(
 
     # Load new format datasets
     if new_dataset_path:
-        print("\n📦 Loading new format datasets...")
+        # print("\n📦 Loading new format datasets...")
         new_path = Path(new_dataset_path)
         if new_path.exists():
             for task_dir in new_path.iterdir():

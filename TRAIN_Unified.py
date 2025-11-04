@@ -22,20 +22,11 @@ Usage:
         --mode train  # Then train
 """
 
-import warnings
 from pydantic import PydanticDeprecatedSince20
-
-# Suppress irrelevant Pydantic warnings
-warnings.filterwarnings(
-    "ignore",
-    message=".*UnsupportedFieldAttributeWarning.*"
-)
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    module="pydantic"
-)
-
+import warnings
+warnings.filterwarnings("ignore", message=".*cudnnException.*")
+warnings.filterwarnings("ignore", message=".*Deterministic behavior.*")
+warnings.filterwarnings("ignore", message=".*Flash Attention.*")
 
 import argparse
 import wandb
@@ -46,10 +37,12 @@ import re
 import math
 import glob
 import pickle
+import atexit
 import numpy as np
 import torch
 from pathlib import Path
 from tqdm import tqdm
+from contextlib import nullcontext
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -74,7 +67,7 @@ torch.cuda.manual_seed_all(seed)
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-torch.use_deterministic_algorithms(True, warn_only=True)
+torch.use_deterministic_algorithms(False, warn_only=True)
 torch.set_float32_matmul_precision("high")
 
 # Import unified models and datasets
@@ -83,9 +76,6 @@ from vla_datasets.unified_dataset import (
     UnifiedVLADataset,
     create_unified_dataloader,
     unified_collate_fn,
-    AsyncInsertionMeca500DatasetWithSensor,
-    NewAsyncInsertionDataset,
-    async_collate_fn_with_sensor,
 )
 
 # Import cache builder
@@ -231,12 +221,20 @@ def build_rewarm_scheduler(
 # 초기화
 # ===========================================================
 def setup_distributed():
-    dist.init_process_group(backend="nccl")
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    torch.cuda.set_device(local_rank)
+    if not dist.is_initialized():
+        dist.init_process_group(backend="nccl", init_method="env://")
+
     rank = dist.get_rank()
     world_size = dist.get_world_size()
-    return rank, world_size, local_rank
+
+    # torchrun에서 LOCAL_RANK는 프로세스별 GPU ID임
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    device = torch.device(f"cuda:{local_rank}")
+
+    print(f"[Rank {rank}] using device {device}")
+    return rank, world_size, local_rank, device
+
 
 # ============================================================
 # Unified Dataloader Builder (Old + New Async Dataset, compatible with main)
@@ -246,22 +244,16 @@ import glob
 from pathlib import Path
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from vla_datasets.AsyncIntegratedDataset import async_collate_fn_with_sensor
-from vla_datasets.NewAsyncDataset import (
-    NewAsyncInsertionDataset,
-    create_weighted_async_dataloader
-)
-from vla_datasets.AsyncIntegratedDataset import AsyncInsertionMeca500DatasetWithSensor
 
 
-def build_dataloaders(args, rank, world_size, full_dataset=None, dataset_weights=None):
+def build_dataloaders(args, rank, world_size):
     """
     Build unified dataloaders combining:
-      ① Old format (AsyncInsertionMeca500DatasetWithSensor)
-      ② New format (NewAsyncInsertionDataset)
+      ① Old format datasets
+      ② New format datasets
+    Uses UnifiedVLADataset for both formats.
     Compatible with main() expecting 4 return values.
     """
-
     if rank == 0:
         print(f"[RANK {rank}] 🚀 Building Unified Async Dataloaders (world_size={world_size})")
 
@@ -290,17 +282,21 @@ def build_dataloaders(args, rank, world_size, full_dataset=None, dataset_weights
     # --------------------------
     print("\n📦 Creating TRAIN dataloader (weighted mix of old/new)...")
 
-    train_loader = create_weighted_async_dataloader(
+    train_loader = create_unified_dataloader(
         old_dataset_patterns=old_priority_patterns + old_regular_patterns,
         new_dataset_path=new_dataset_root,
-        old_dataset_weight=old_dataset_weight,
-        new_dataset_weight=new_dataset_weight,
+        old_weight=old_dataset_weight,
+        new_weight=new_dataset_weight,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         shuffle=True,
         horizon=args.horizon if hasattr(args, "horizon") else 8,
         vlm_reuse_count=args.vlm_reuse_count if hasattr(args, "vlm_reuse_count") else 3,
+        sensor_window_size=args.sensor_window_size if hasattr(args, "sensor_window_size") else 65,
         action_expert_hz=args.action_expert_hz if hasattr(args, "action_expert_hz") else 10,
+        distributed=True,
+        rank=rank,
+        world_size=world_size,
     )
 
     # --------------------------
@@ -314,8 +310,9 @@ def build_dataloaders(args, rank, world_size, full_dataset=None, dataset_weights
     for pattern in val_patterns:
         for traj_dir in sorted(glob.glob(pattern)):
             try:
-                ds = AsyncInsertionMeca500DatasetWithSensor(
-                    trajectory_dir=traj_dir,
+                ds = UnifiedVLADataset(
+                    data_dir=str(traj_dir),
+                    format='old',  # Old format for validation
                     horizon=args.horizon if hasattr(args, "horizon") else 8,
                     vlm_reuse_count=args.vlm_reuse_count if hasattr(args, "vlm_reuse_count") else 3,
                     sensor_window_size=args.sensor_window_size if hasattr(args, "sensor_window_size") else 65,
@@ -339,20 +336,15 @@ def build_dataloaders(args, rank, world_size, full_dataset=None, dataset_weights
         shuffle=False,
         num_workers=args.num_workers,
         sampler=val_sampler,
-        collate_fn=async_collate_fn_with_sensor,
+        collate_fn=unified_collate_fn,
         pin_memory=True,
     )
-
-    # --------------------------
-    # Dummy Sampler placeholders
-    # --------------------------
-    train_sampler = getattr(train_loader, "sampler", None)
 
     if rank == 0:
         print(f"✅ TRAIN loader: {len(train_loader)} batches | VAL loader: {len(val_loader)} batches")
         print(f"   Old dataset weight={old_dataset_weight}, New dataset weight={new_dataset_weight}")
 
-    return train_loader, val_loader, train_sampler, val_sampler
+    return train_loader, val_loader
 
 # ===========================================================
 # Diffusion 학습 루프
@@ -399,6 +391,7 @@ def Train_Diffusion(
     log_interval = 10
 
     for epoch in range(start_epoch, start_epoch + num_epochs):
+        
         if isinstance(data_loader.sampler, DistributedSampler):
             data_loader.sampler.set_epoch(epoch)
 
@@ -414,67 +407,58 @@ def Train_Diffusion(
                     disable=(rank != 0))
 
         for step, batch in pbar:
-            # ⬇️ [수정] try...except 블록 추가
-            try:
-                gt_actions = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
-                sensor_data = batch["sensor_data"].to(device, dtype=torch.bfloat16, non_blocking=True) if sensor_enabled else None
-                has_sensor_mask = batch["has_sensor_mask"].to(device, non_blocking=True) if sensor_enabled else None
+            gt_actions = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
+            sensor_data = batch["sensor_data"].to(device, dtype=torch.bfloat16, non_blocking=True) if sensor_enabled else None
+            has_sensor_mask = batch["has_sensor_mask"].to(device, non_blocking=True) if sensor_enabled else None
 
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    eps_pred, eps_target, timesteps = model(
-                        text_inputs=batch["instruction"],
-                        image_inputs=batch["images"],
-                        actions=gt_actions,
-                        cache_keys=batch["cache_keys"],
-                        sensor_data=sensor_data if sensor_enabled else None,
-                    )
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                eps_pred, eps_target, timesteps = model(
+                    text_inputs=batch["instruction"],
+                    image_inputs=batch["images"],
+                    actions=gt_actions,
+                    cache_keys=batch["cache_keys"],
+                    sensor_data=sensor_data if sensor_enabled else None,
+                )
 
-                loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
+            loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
 
-                weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
-                if sensor_enabled and has_sensor_mask is not None:
-                    sensor_weights = torch.where(
-                        has_sensor_mask,
-                        torch.tensor(sensor_loss_weight, device=device, dtype=torch.bfloat16),
-                        torch.tensor(1.0, device=device, dtype=torch.bfloat16)
-                    )
-                    weights = weights * sensor_weights
-                    total_sensor_samples += has_sensor_mask.sum().item()
-                    total_nonsensor_samples += (~has_sensor_mask).sum().item()
+            weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
+            if sensor_enabled and has_sensor_mask is not None:
+                sensor_weights = torch.where(
+                    has_sensor_mask,
+                    torch.tensor(sensor_loss_weight, device=device, dtype=torch.bfloat16),
+                    torch.tensor(1.0, device=device, dtype=torch.bfloat16)
+                )
+                weights = weights * sensor_weights
+                total_sensor_samples += has_sensor_mask.sum().item()
+                total_nonsensor_samples += (~has_sensor_mask).sum().item()
 
-                loss = (loss_per_sample * weights).mean() / grad_accum_steps
+            loss = (loss_per_sample * weights).mean() / grad_accum_steps
 
+            sync_context = model.no_sync() if (step + 1) % grad_accum_steps != 0 else nullcontext()
+            with sync_context:
                 loss.backward()
 
-                if (step + 1) % grad_accum_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                    optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)
+            if (step + 1) % grad_accum_steps == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
 
-                    if scheduler is not None and sched_on == "step":
-                        scheduler.step()
-                    global_step += 1
+                if scheduler is not None and sched_on == "step":
+                    scheduler.step()
+                global_step += 1
 
-                total_loss += loss.item() * grad_accum_steps
+            total_loss += loss.item() * grad_accum_steps
 
-                if rank == 0 and (step % log_interval == 0):
-                    lr = optimizer.param_groups[0]["lr"]
-                    pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}", "lr": f"{lr:.2e}"})
-                    wandb.log({
-                        "train/loss": loss.item() * grad_accum_steps,
-                        "train/lr": lr,
-                        "train/epoch": epoch,
-                        "train/step": global_step,
-                    })
-
-            except FileNotFoundError as e:
-                if rank == 0:
-                    pbar.write(f"⚠️ [Rank {rank}] 캐시 파일 없음, Batch {step} 스킵. (오류: {e})")
-                
-                # 그라디언트 축적 단계였다면, 스킵했으므로 그라디언트 초기화
-                if (step + 1) % grad_accum_steps == 0:
-                    optimizer.zero_grad(set_to_none=True)
-                continue # 다음 스텝으로 넘어감
+            if rank == 0 and (step % log_interval == 0):
+                lr = optimizer.param_groups[0]["lr"]
+                pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}", "lr": f"{lr:.2e}"})
+                wandb.log({
+                    "train/loss": loss.item() * grad_accum_steps,
+                    "train/lr": lr,
+                    "train/epoch": epoch,
+                    "train/step": global_step,
+                })
 
         if scheduler is not None and sched_on == "epoch":
             scheduler.step()
@@ -525,7 +509,7 @@ def Train_Diffusion(
             })
 
     if rank == 0 and writer:
-        writer.close()
+        atexit.register(writer.close)
         wandb.finish()
 
 
@@ -590,21 +574,25 @@ def Train_Regression(
     start_epoch=0,
     sensor_enabled=True,
     sensor_loss_weight=2.0,
+    model_type="regression",  # 'regression' or 'flow_matching'
 ):
-    """Regression-based training loop"""
+    """Regression/Flow Matching training loop"""
     loss_fn = nn.MSELoss()
     rank = dist.get_rank()
     writer = AsyncCheckpointWriter(max_queue=2, sync_every=0) if rank == 0 else None
 
     model.train()
     if rank == 0:
+        project_name = "QwenVLA-Unified-FlowMatching" if model_type == "flow_matching" else "QwenVLA-Unified-Regression"
+        run_name = f"{model_type}_{time.strftime('%m%d_%H%M')}"
         wandb.init(
-            project="QwenVLA-Unified-Regression",
-            name=f"regression_{time.strftime('%m%d_%H%M')}",
+            project=project_name,
+            name=run_name,
             resume="allow",
-            id=f"qvla_regression_{int(time.time())}",
+            id=f"qvla_{model_type}_{int(time.time())}",
             settings=wandb.Settings(start_method="thread", _disable_stats=True),
             config={
+                "model_type": model_type,
                 "lr": optimizer.param_groups[0]["lr"],
                 "grad_accum_steps": grad_accum_steps,
                 "epochs": num_epochs,
@@ -633,6 +621,14 @@ def Train_Regression(
         for step, batch in pbar:
             # ⬇️ [수정] try...except 블록 추가
             try:
+                # 🔍 Debug: Check what's in the batch
+                if rank == 0 and step == 0:
+                    print(f"\n🔍 DEBUG - Batch keys: {batch.keys()}")
+                    if "robot_states" in batch:
+                        print(f"   robot_states in batch: {batch['robot_states'].shape if batch['robot_states'] is not None else 'None'}")
+                    else:
+                        print(f"   ❌ robot_states NOT in batch!")
+
                 # ✅ 모든 텐서 GPU로 비동기 전송
                 instructions = batch["instruction"]
                 image_inputs = batch["images"]
@@ -647,33 +643,63 @@ def Train_Regression(
                     if sensor_enabled else None
                 )
 
+                # Robot states
+                robot_states = None
+                if "robot_states" in batch and sensor_enabled:
+                    try:
+                        robot_states = batch["robot_states"].to(device, non_blocking=True)
+                        if rank == 0 and step == 0:
+                            print(f"   ✅ robot_states loaded: {robot_states.shape}")
+                    except Exception as e:
+                        if rank == 0:
+                            print(f"⚠️ Failed to load robot_states: {e}")
+                        robot_states = None
+                elif rank == 0 and step == 0:
+                    print(f"   ⚠️ robot_states not loaded: in_batch={('robot_states' in batch)}, sensor_enabled={sensor_enabled}")
+
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    pred_actions, _ = model(
-                        text_inputs=instructions,
-                        image_inputs=image_inputs,
-                        z_chunk=gt_actions,
-                        cache_keys=batch["cache_keys"],
-                        sensor_data=sensor_data if sensor_enabled else None,
-                    )
+                    if model_type == "flow_matching":
+                        # Flow matching: model returns loss directly
+                        flow_loss, _, _ = model(
+                            text_inputs=instructions,
+                            image_inputs=image_inputs,
+                            actions=gt_actions,  # Use 'actions' for flow matching
+                            cache_keys=batch["cache_keys"],
+                            sensor_data=sensor_data if sensor_enabled else None,
+                            robot_states=robot_states,
+                        )
+                        loss = flow_loss / grad_accum_steps
+                    else:
+                        # Regression: compute MSE loss
+                        pred_actions, _ = model(
+                            text_inputs=instructions,
+                            image_inputs=image_inputs,
+                            z_chunk=gt_actions,
+                            cache_keys=batch["cache_keys"],
+                            sensor_data=sensor_data if sensor_enabled else None,
+                            robot_states=robot_states,
+                        )
 
-                # ✅ confidence도 GPU에서 바로 weight tensor 생성
-                weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
+                        # ✅ confidence도 GPU에서 바로 weight tensor 생성
+                        weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
 
-                if sensor_enabled and has_sensor_mask is not None:
-                    sensor_weights = torch.where(
-                        has_sensor_mask,
-                        torch.tensor(sensor_loss_weight, device=device, dtype=torch.bfloat16),
-                        torch.tensor(1.0, device=device, dtype=torch.bfloat16)
-                    )
-                    weights = weights * sensor_weights
-                    total_sensor_samples += has_sensor_mask.sum().item()
-                    total_nonsensor_samples += (~has_sensor_mask).sum().item()
+                        if sensor_enabled and has_sensor_mask is not None:
+                            sensor_weights = torch.where(
+                                has_sensor_mask,
+                                torch.tensor(sensor_loss_weight, device=device, dtype=torch.bfloat16),
+                                torch.tensor(1.0, device=device, dtype=torch.bfloat16)
+                            )
+                            weights = weights * sensor_weights
+                            total_sensor_samples += has_sensor_mask.sum().item()
+                            total_nonsensor_samples += (~has_sensor_mask).sum().item()
 
-                weights = weights / weights.mean()
-                loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
-                loss = (loss_each * weights).mean() / grad_accum_steps
+                        weights = weights / weights.mean()
+                        loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
+                        loss = (loss_each * weights).mean() / grad_accum_steps
 
-                loss.backward()
+                sync_context = model.no_sync() if (step + 1) % grad_accum_steps != 0 else nullcontext()
+                with sync_context:
+                    loss.backward()
                 total_loss += loss.item() * grad_accum_steps
 
                 if (step + 1) % grad_accum_steps == 0:
@@ -737,19 +763,38 @@ def Train_Regression(
                             batch["sensor_data"].to(device, dtype=torch.bfloat16, non_blocking=True)
                             if sensor_enabled else None
                         )
-
-                        pred_actions, _ = model(
-                            text_inputs=batch["instruction"],
-                            image_inputs=batch["images"],
-                            z_chunk=gt_actions,
-                            cache_keys=batch["cache_keys"],
-                            sensor_data=sensor_data if sensor_enabled else None,
+                        robot_states = (
+                            batch["robot_states"].to(device, non_blocking=True)
+                            if "robot_states" in batch and sensor_enabled else None
                         )
 
-                        weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
-                        weights = weights / weights.mean()
-                        loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
-                        loss = (loss_each * weights).mean() / grad_accum_steps # grad_accum은 1로 가정해도 무방 (val이므로)
+                        if model_type == "flow_matching":
+                            # Flow matching: model returns loss directly (not 3 values like diffusion)
+                            loss, _, _ = model(
+                                text_inputs=batch["instruction"],
+                                image_inputs=batch["images"],
+                                actions=gt_actions,
+                                cache_keys=batch["cache_keys"],
+                                sensor_data=sensor_data if sensor_enabled else None,
+                                robot_states=robot_states,
+                            )
+                            if loss.ndim > 0:
+                                loss = loss.mean()
+                        else:
+                            # Regression: compute MSE loss
+                            pred_actions, _ = model(
+                                text_inputs=batch["instruction"],
+                                image_inputs=batch["images"],
+                                z_chunk=gt_actions,
+                                cache_keys=batch["cache_keys"],
+                                sensor_data=sensor_data if sensor_enabled else None,
+                                robot_states=robot_states,
+                            )
+
+                            weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
+                            weights = weights / weights.mean()
+                            loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
+                            loss = (loss_each * weights).mean()
                         val_loss_sum += loss.item()
                         val_count += 1
                     except FileNotFoundError:
@@ -810,21 +855,23 @@ def Train_Regression(
                 Train_Regression._best_loss = float("inf")
 
             is_best = val_loss is not None and val_loss < Train_Regression._best_loss
-
+            
+            ckpt_prefix = "flow_matching" if model_type == "flow_matching" else "regression"
+            
             if is_best:
                 Train_Regression._best_loss = val_loss
-                best_path = CKPT_DIR / "regression_best.pt"
+                best_path = CKPT_DIR / f"{ckpt_prefix}_best.pt"
                 torch.save(ckpt_data, best_path)
                 print(f"🏆 [Best] Validation improved → saved to {best_path}")
             else:
-                latest_path = CKPT_DIR / "regression_latest.pt"
+                latest_path = CKPT_DIR / f"{ckpt_prefix}_latest.pt"
                 tmp_path = latest_path.with_suffix(".tmp")
                 torch.save(ckpt_data, tmp_path)
                 os.replace(tmp_path, latest_path)
                 print(f"💾 Latest checkpoint updated: {latest_path}")
 
     if rank == 0 and writer is not None:
-        writer.close()
+        atexit.register(writer.close)
 
     if rank == 0:
         wandb.finish()
@@ -853,27 +900,33 @@ def build_datasets(args, rank):
     # New dataset path (3x weight)
     new_dataset_path = Path("/home/najo/NAS/VLA/dataset/New_dataset")
 
-    # Determine VLM reuse count based on model type
-    # Note: All datasets use sensor_window_size=650 (pre-processed)
+    # Check for deprecated model type
     if args.model_type == 'diffusion':
-        sensor_window_size = 650
-        vlm_reuse_count = 1
-    else:  # regression
-        sensor_window_size = 650  # Use same as diffusion (New dataset is pre-processed to 650)
-        vlm_reuse_count = 3
+        raise ValueError(
+            "❌ Diffusion model is deprecated!\n"
+            "Please use 'flow_matching' or 'regression' instead.\n"
+            "Flow matching provides faster inference and better performance."
+        )
+
+    # Determine VLM reuse count and sensor window size
+    # Note: All datasets use sensor_window_size=650 (pre-processed)
+    sensor_window_size = 650
+    vlm_reuse_count = 3  # VL features reused for 3 action predictions
 
     # Load priority old datasets (2x weight)
-    if rank == 0:
-        print("\n📦 Loading priority old datasets (2x weight)...")
+    # if rank == 0:
+        # print("\n📦 Loading priority old datasets (2x weight)...")
     for pattern in priority_old_dataset_dirs:
         expanded_paths = glob.glob(pattern)
         for traj_dir in expanded_paths:
             try:
-                ds = AsyncInsertionMeca500DatasetWithSensor(
-                    trajectory_dir=traj_dir,
+                ds = UnifiedVLADataset(
+                    data_dir=str(traj_dir),
+                    format='old',  # Explicitly specify old format
                     horizon=8,
                     vlm_reuse_count=vlm_reuse_count,
                     sensor_window_size=sensor_window_size,
+                    action_expert_hz=10,
                 )
                 datasets.append(ds)
                 dataset_weights.extend([2.0] * len(ds))
@@ -885,17 +938,19 @@ def build_datasets(args, rank):
                     print(f"⚠️ Failed to load {traj_dir}: {e}")
 
     # Load regular old datasets (1x weight)
-    if rank == 0:
-        print("\n📦 Loading regular old datasets (1x weight)...")
+    # if rank == 0:
+    #     print("\n📦 Loading regular old datasets (1x weight)...")
     for pattern in regular_old_dataset_dirs:
         expanded_paths = glob.glob(pattern)
         for traj_dir in expanded_paths:
             try:
-                ds = AsyncInsertionMeca500DatasetWithSensor(
-                    trajectory_dir=traj_dir,
+                ds = UnifiedVLADataset(
+                    data_dir=str(traj_dir),
+                    format='old',  # Explicitly specify old format
                     horizon=8,
                     vlm_reuse_count=vlm_reuse_count,
                     sensor_window_size=sensor_window_size,
+                    action_expert_hz=10,
                 )
                 datasets.append(ds)
                 dataset_weights.extend([1.0] * len(ds))
@@ -908,7 +963,7 @@ def build_datasets(args, rank):
 
     # Load new datasets (3x weight)
     if rank == 0:
-        print("\n📦 Loading new datasets (3x weight)...")
+        # print("\n📦 Loading new datasets (3x weight)...")
         # ⬇️ [DEBUG] ⬇️
         t_loop_start = time.time()
         episode_count = 0
@@ -938,10 +993,12 @@ def build_datasets(args, rank):
                     # ⬇️ [DEBUG] ⬇️
                     t_ep_start = time.time()
                     # ⬆️ [DEBUG] ⬆️
-                    ds = NewAsyncInsertionDataset(
-                        episode_dir=episode_dir,
+                    ds = UnifiedVLADataset(
+                        data_dir=str(episode_dir),
+                        format='new',  # Explicitly specify new format
                         horizon=8,
                         vlm_reuse_count=vlm_reuse_count,
+                        sensor_window_size=sensor_window_size,
                         action_expert_hz=10,
                         instruction=instruction,
                     )
@@ -992,8 +1049,8 @@ def main():
     parser = argparse.ArgumentParser(description='Unified VLA Training with Sensor')
 
     # Model selection
-    parser.add_argument('--model-type', type=str, choices=['diffusion', 'regression'], required=True,
-                        help='Model type: diffusion or regression')
+    parser.add_argument('--model-type', type=str, choices=['diffusion', 'regression', 'flow_matching'], required=True,
+                        help='Model type: diffusion, regression, or flow_matching')
 
     # Mode (for regression with cache)
     parser.add_argument('--mode', type=str, choices=['cache', 'train'], default='train',
@@ -1031,14 +1088,14 @@ def main():
     parser.add_argument('--image_resize_width', type=int, default=640)
 
     # Other
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
 
     args = parser.parse_args()
 
     # Setup distributed
-    rank, world_size, local_rank = setup_distributed()
-    device = torch.device(f"cuda:{local_rank}")
+    rank, world_size, local_rank, device = setup_distributed()
+    torch.cuda.set_device(device)
 
     if rank == 0:
         print(f"🚀 Unified VLA Training")
@@ -1048,18 +1105,17 @@ def main():
         print(f"   Dataset: {args.dataset_dir}")
 
     vl_model_name = "Qwen/Qwen2.5-VL-3B-Instruct"
-
-    # Build datasets
-    if rank == 0:
-        print("📦 Building integrated dataset...")
-
-    full_dataset, dataset_weights = build_datasets(args, rank)
+    cache_dir = Path("/home/najo/NAS/VLA/dataset/cache/qwen_vl_features")
 
     # ===========================================================
     # Cache build mode
     # ===========================================================
-    cache_dir = Path("/home/najo/NAS/VLA/dataset/cache/qwen_vl_features")
-    if args.mode == "cache" and args.model_type in ["regression", "diffusion"]:
+    if args.mode == "cache" and args.model_type in ["regression", "diffusion", "flow_matching"]:
+        # Build datasets only for cache mode
+        if rank == 0:
+            print("📦 Building integrated dataset for caching...")
+
+        full_dataset, dataset_weights = build_datasets(args, rank)
         if rank == 0:
             print("⏳ Building VL cache (shared for regression & diffusion)...")
 
@@ -1090,7 +1146,7 @@ def main():
                 return self
 
         dummy_model = DummyVLA(vl_model, processor)
-        build_vl_cache_distributed_optimized(dummy_model, full_dataset, device=device, rank_sharded_cache=False)
+        build_vl_cache_distributed_optimized(dummy_model, full_dataset, device=device)
 
         dist.barrier()
         if rank == 0:
@@ -1112,6 +1168,12 @@ def main():
     # ===========================================================
     # Training mode
     # ===========================================================
+    # Build datasets for training mode
+    if rank == 0:
+        print("📦 Building integrated dataset for training...")
+
+    train_loader, val_loader = build_dataloaders(args, rank, world_size)
+    
     if rank == 0:
         print("⏳ Initializing model for training...")
 
@@ -1125,7 +1187,8 @@ def main():
         sensor_enabled=args.sensor_enabled,
         sensor_input_channels=1026,
         sensor_temporal_length=65,
-        sensor_output_dim=3072,
+        sensor_output_dim=2048,  # Adjusted to match actual sensor encoder output
+        robot_state_enabled=args.sensor_enabled,  # Enable robot state together with sensor
         fusion_strategy=args.fusion_strategy,
         diffusion_timesteps=args.diffusion_timesteps if args.model_type == 'diffusion' else 100,
         finetune_vl='none',
@@ -1151,9 +1214,7 @@ def main():
                 gradient_as_bucket_view=False)
 
     
-    train_loader, val_loader, train_sampler, val_sampler = build_dataloaders(
-        args, rank, world_size, full_dataset, dataset_weights
-    )
+    
     
     
     if rank == 0:
@@ -1190,6 +1251,8 @@ def main():
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         if scheduler and ckpt.get("scheduler_state_dict"):
             scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = scheduler.get_last_lr()[0]
         start_epoch = ckpt.get("epoch", 0)
 
     # Train
@@ -1208,7 +1271,7 @@ def main():
             sensor_enabled=args.sensor_enabled,
             sensor_loss_weight=args.sensor_loss_weight,
         )
-    else:  # regression
+    else:  # regression or flow_matching
         Train_Regression(
             model=model,
             data_loader=train_loader,
@@ -1222,6 +1285,7 @@ def main():
             start_epoch=start_epoch,
             sensor_enabled=args.sensor_enabled,
             sensor_loss_weight=args.sensor_loss_weight,
+            model_type=args.model_type,  # Pass model type for flow matching
         )
 
     dist.destroy_process_group()

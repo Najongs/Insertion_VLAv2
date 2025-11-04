@@ -22,7 +22,7 @@ from pathlib import Path
 import hashlib
 import fcntl
 from concurrent.futures import ThreadPoolExecutor
-from typing import Iterable, List, Optional, Literal
+from typing import Iterable, List, Optional, Literal, Tuple
 
 import numpy as np
 import torch
@@ -32,26 +32,209 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 from peft import LoraConfig, get_peft_model
 
+# Import Flow Matching
+from models.flow_matching import FlowMatchingActionExpert
+
 
 # =====================================
-# 1️⃣ Sensor Encoder Module
+# 1️⃣ Robot State Encoder (MLP-based)
 # =====================================
-class SensorEncoder(nn.Module):
+
+class RobotStateEncoder(nn.Module):
     """
-    OCT/FPI 센서 데이터 인코더: (B, T, C) where T=650 or 65, C=1026
+    MLP-based encoder for robot state (joint angles + pose)
+
+    Robot state is more structured than sensor data:
+    - 12 dimensions: 6 joint angles + 6 pose (x,y,z,a,b,r)
+    - Direct physical meaning (no noise like force sensors)
+    - Temporal sequence needs temporal modeling
 
     Architecture:
-    - 1D Convolutional layers for temporal feature extraction
-    - Optional Transformer layers for long-range dependencies
-    - Projection to match VL feature dimension (3072)
-
-    Args:
-        input_channels: 1026 (1 force + 1025 A-scan)
-        temporal_length: 650 (full) or 65 (async)
-        hidden_dim: Internal hidden dimension
-        output_dim: Output feature dimension (3072 to match Qwen VL)
-        use_transformer: Whether to use transformer layers
+    1. Per-timestep MLP: (12) → (hidden_dim)
+    2. Temporal attention or pooling
+    3. Final projection to output_dim
     """
+
+    def __init__(
+        self,
+        input_dim: int = 12,  # 6 joints + 6 poses
+        temporal_length: int = 65,
+        hidden_dim: int = 256,
+        output_dim: int = 2048,
+        num_layers: int = 3,
+        use_temporal_attention: bool = True,
+        nhead: int = 8,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+
+        self.input_dim = input_dim
+        self.temporal_length = temporal_length
+        self.output_dim = output_dim
+        self.use_temporal_attention = use_temporal_attention
+
+        # Per-timestep MLP (shared across time)
+        mlp_layers = []
+        current_dim = input_dim
+        for i in range(num_layers):
+            next_dim = hidden_dim if i == 0 else hidden_dim * 2
+            mlp_layers.extend([
+                nn.Linear(current_dim, next_dim),
+                nn.LayerNorm(next_dim),
+                nn.GELU(),
+                nn.Dropout(dropout)
+            ])
+            current_dim = next_dim
+
+        self.per_timestep_mlp = nn.Sequential(*mlp_layers)
+
+        # Temporal modeling
+        if use_temporal_attention:
+            # Transformer encoder for temporal dependencies
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=current_dim,
+                nhead=nhead,
+                dim_feedforward=current_dim * 4,
+                dropout=dropout,
+                batch_first=True,
+                norm_first=True
+            )
+            self.temporal_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        else:
+            # Simple temporal pooling
+            self.temporal_encoder = None
+
+        # Output projection
+        self.output_proj = nn.Sequential(
+            nn.Linear(current_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(output_dim, output_dim)
+        )
+
+        print(f"✅ RobotStateEncoder initialized:")
+        print(f"   Input: (B, {temporal_length}, {input_dim}) - [joints:6, poses:6]")
+        print(f"   Per-timestep MLP: {num_layers} layers → {current_dim} dims")
+        print(f"   Temporal: {'Transformer attention' if use_temporal_attention else 'Avg pooling'}")
+        print(f"   Output: (B, {output_dim})")
+
+    def forward(self, robot_states: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            robot_states: (B, T, 12) where T can be variable
+        Returns:
+            features: (B, output_dim)
+        """
+        B, T, C = robot_states.shape
+
+        if C != self.input_dim:
+            raise ValueError(f"Expected {self.input_dim} channels, got {C}")
+
+        # Handle variable temporal length with padding/truncation
+        if T < self.temporal_length:
+            # Pad with zeros
+            pad = torch.zeros((B, self.temporal_length - T, C),
+                            device=robot_states.device, dtype=robot_states.dtype)
+            x = torch.cat([robot_states, pad], dim=1)
+        elif T > self.temporal_length:
+            # Truncate (take last temporal_length timesteps)
+            x = robot_states[:, -self.temporal_length:, :]
+        else:
+            x = robot_states
+
+        # Per-timestep encoding: (B, T, 12) → (B, T, hidden_dim)
+        x = self.per_timestep_mlp(x)
+
+        # Temporal modeling
+        if self.use_temporal_attention:
+            # Transformer attention across time
+            x = self.temporal_encoder(x)  # (B, T, hidden_dim)
+            # Average pooling across time
+            x = x.mean(dim=1)  # (B, hidden_dim)
+        else:
+            # Simple average pooling
+            x = x.mean(dim=1)  # (B, hidden_dim)
+
+        # Output projection
+        features = self.output_proj(x)  # (B, output_dim)
+
+        return features
+
+
+# =====================================
+# 2️⃣ Sensor Encoder Module
+# =====================================
+class RMSNorm(nn.Module):
+    def __init__(self, dim, eps=1e-8):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        norm = x.norm(2, dim=-1, keepdim=True)
+        rms = norm / (x.size(-1) ** 0.5)
+        return self.weight * (x / (rms + self.eps))
+
+class ResidualDownsample1d(nn.Module):
+    def __init__(self, in_ch, out_ch, stride=2, dropout=0.1, bn_fp32=True):
+        super().__init__()
+        self.bn_fp32 = bn_fp32
+
+        self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1   = nn.BatchNorm1d(out_ch)
+        self.act1  = nn.GELU()
+        self.do1   = nn.Dropout(dropout)
+
+        self.conv2 = nn.Conv1d(out_ch, out_ch, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2   = nn.BatchNorm1d(out_ch)
+        self.act2  = nn.GELU()
+
+        self.skip  = nn.Identity() if (in_ch == out_ch and stride == 1) else \
+                     nn.Conv1d(in_ch, out_ch, kernel_size=1, stride=stride, bias=False)
+
+        # ▼ BN을 FP32로 고정
+        if self.bn_fp32:
+            self.bn1.float()
+            self.bn2.float()
+
+    def forward(self, x):
+        dtype = x.dtype
+
+        y = self.conv1(x)
+        if self.bn_fp32:
+            with torch.cuda.amp.autocast(enabled=False):
+                y = self.bn1(y.float())
+            y = y.to(dtype)
+        else:
+            y = self.bn1(y)
+        y = self.act1(y)
+        y = self.do1(y)
+
+        y = self.conv2(y)
+        if self.bn_fp32:
+            with torch.cuda.amp.autocast(enabled=False):
+                y = self.bn2(y.float())
+            y = y.to(dtype)
+        else:
+            y = self.bn2(y)
+        y = self.act2(y)
+
+        s = self.skip(x)
+        return y + s
+
+
+def force_bn_fp32_(module: torch.nn.Module):
+    """Cast all BatchNorm params/buffers in `module` to float32."""
+    for m in module.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            m.float()  # weights/bias & running stats 모두 FP32로
+
+
+# =====================================
+# Improved Sensor Encoder (Temporal ConvFormer)
+# =====================================
+class SensorEncoder(nn.Module):
     def __init__(self,
                  input_channels=1026,
                  temporal_length=650,
@@ -65,125 +248,339 @@ class SensorEncoder(nn.Module):
                  gradient_checkpointing=False,
                  interpolation_mode='linear'):
         super().__init__()
-
         self.input_channels = input_channels
         self.temporal_length = temporal_length
         self.output_dim = output_dim
         self.gradient_checkpointing = gradient_checkpointing
         self.interpolation_mode = interpolation_mode
 
-        # 1D Convolutional backbone
-        conv_layers = []
-        current_channels = input_channels
-        current_length = temporal_length
-
+        # ▼ 잔차 다운샘플 블록 스택
+        chs = [input_channels]
+        conv_blocks = []
         for i in range(num_conv_layers):
-            out_channels = hidden_dim if i == 0 else hidden_dim * 2 if i == 1 else hidden_dim * 2
-            conv_layers.extend([
-                nn.Conv1d(current_channels, out_channels, kernel_size=3, stride=2, padding=1),
-                nn.BatchNorm1d(out_channels),
-                nn.GELU(),
-                nn.Dropout(dropout)
-            ])
-            current_channels = out_channels
-            current_length = (current_length + 1) // 2
+            out_ch = hidden_dim if i == 0 else hidden_dim * 2  # 1026→512→1024→1024 …
+            conv_blocks.append(ResidualDownsample1d(
+                in_ch=chs[-1], out_ch=out_ch, stride=2, dropout=dropout, bn_fp32=True
+            ))
+            chs.append(out_ch)
+        self.conv_backbone = nn.ModuleList(conv_blocks)
+        self.final_channels = chs[-1]
 
-        self.conv_backbone = nn.Sequential(*conv_layers)
-        self.final_temporal_length = current_length
+        # 최종 길이(대략 반씩 줄어듦)
+        self.final_temporal_length = (temporal_length + (1 << num_conv_layers) - 1) // (1 << num_conv_layers)
 
-        # Optional Transformer layers
         self.use_transformer = use_transformer
         if use_transformer:
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=current_channels,
-                nhead=nhead,
-                dim_feedforward=current_channels * 4,
-                dropout=dropout,
-                batch_first=True,
-                norm_first=True
+            enc_layer = nn.TransformerEncoderLayer(
+                d_model=self.final_channels, nhead=nhead,
+                dim_feedforward=self.final_channels * 4,
+                dropout=dropout, batch_first=True, norm_first=True
             )
-            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_transformer_layers)
+            self.transformer = nn.TransformerEncoder(enc_layer, num_layers=num_transformer_layers)
 
-        # Temporal pooling and projection
         self.temporal_pool = nn.AdaptiveAvgPool1d(1)
         self.projection = nn.Sequential(
-            nn.Linear(current_channels, output_dim),
+            nn.Linear(self.final_channels, output_dim),
             nn.LayerNorm(output_dim),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(output_dim, output_dim)
+            nn.Linear(output_dim, output_dim),
         )
 
-        print(f"✅ SensorEncoder initialized:")
-        print(f"   Input: (B, {temporal_length}, {input_channels})")
-        print(f"   Conv layers: {num_conv_layers} → Final length: {self.final_temporal_length}")
-        print(f"   Transformer: {use_transformer} ({num_transformer_layers} layers)")
-        print(f"   Output: (B, {output_dim})")
-
     def forward(self, sensor_data: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            sensor_data: (B, T, C) where T can be variable, C=1026
-        Returns:
-            sensor_features: (B, output_dim)
-        """
+        # sensor_data: (B,T,C)
         B, T, C = sensor_data.shape
-
         if C != self.input_channels:
             raise ValueError(f"Expected {self.input_channels} channels, got {C}")
 
-        # Handle variable temporal length with interpolation
+        # 비동기 길이 보정 (interpolate)
         if T != self.temporal_length:
-            x = sensor_data.transpose(1, 2)  # (B, C, T)
-
-            if self.interpolation_mode == 'cubic' and T >= 4:
-                x = F.interpolate(x, size=self.temporal_length, mode='cubic', align_corners=False)
-            else:
-                mode = 'linear' if self.interpolation_mode == 'cubic' and T < 4 else self.interpolation_mode
-                align = False if mode == 'linear' else None
-                x = F.interpolate(x, size=self.temporal_length, mode=mode,
-                                align_corners=align)
-
-            sensor_data = x.transpose(1, 2)
-
-        # (B, T, C) → (B, C, T) for Conv1d
-        x = sensor_data.transpose(1, 2)
-
-        # Convolutional feature extraction
-        if self.gradient_checkpointing and self.training:
-            x = torch.utils.checkpoint.checkpoint(self.conv_backbone, x, use_reentrant=False)
+            x = sensor_data.transpose(1, 2)  # (B,C,T)
+            mode = 'linear' if self.interpolation_mode == 'cubic' and T < 4 else self.interpolation_mode
+            x = F.interpolate(x, size=self.temporal_length, mode=mode,
+                              align_corners=False if mode in ('linear', 'cubic') else None)
         else:
-            x = self.conv_backbone(x)
+            x = sensor_data.transpose(1, 2)  # (B,C,T)
 
-        # Optional Transformer
+        # Conv 스택
+        for block in self.conv_backbone:
+            if self.gradient_checkpointing and self.training:
+                x = torch.utils.checkpoint.checkpoint(block, x, use_reentrant=False)
+            else:
+                x = block(x)   # (B, ch, T/2)
+
+        # Transformer (시간축 first로 바꿔 처리)
         if self.use_transformer:
-            x = x.transpose(1, 2)  # (B, T', hidden_dim*2)
+            x = x.transpose(1, 2)  # (B, T', ch)
             if self.gradient_checkpointing and self.training:
                 x = torch.utils.checkpoint.checkpoint(self.transformer, x, use_reentrant=False)
             else:
                 x = self.transformer(x)
-            x = x.transpose(1, 2)
+            x = x.transpose(1, 2)  # (B, ch, T')
 
-        # Temporal pooling
-        x = self.temporal_pool(x).squeeze(-1)  # (B, hidden_dim*2)
-
-        # Project to output dimension
-        sensor_features = self.projection(x)  # (B, output_dim)
-
+        # 시계열 풀링 → 투영
+        x = self.temporal_pool(x).squeeze(-1)        # (B, ch)
+        sensor_features = self.projection(x)         # (B, output_dim)
         return sensor_features
 
 
+
+# class SensorEncoder(nn.Module):
+#     """
+#     OCT/FPI 센서 데이터 인코더: (B, T, C) where T=650 or 65, C=1026
+
+#     Architecture:
+#     - 1D Convolutional layers for temporal feature extraction
+#     - Optional Transformer layers for long-range dependencies
+#     - Projection to match VL feature dimension (3072)
+
+#     Args:
+#         input_channels: 1026 (1 force + 1025 A-scan)
+#         temporal_length: 650 (full) or 65 (async)
+#         hidden_dim: Internal hidden dimension
+#         output_dim: Output feature dimension (3072 to match Qwen VL)
+#         use_transformer: Whether to use transformer layers
+#     """
+#     def __init__(self,
+#                  input_channels=1026,
+#                  temporal_length=650,
+#                  hidden_dim=512,
+#                  output_dim=3072,
+#                  num_conv_layers=4,
+#                  use_transformer=True,
+#                  num_transformer_layers=2,
+#                  nhead=8,
+#                  dropout=0.1,
+#                  gradient_checkpointing=False,
+#                  interpolation_mode='linear'):
+#         super().__init__()
+
+#         self.input_channels = input_channels
+#         self.temporal_length = temporal_length
+#         self.output_dim = output_dim
+#         self.gradient_checkpointing = gradient_checkpointing
+#         self.interpolation_mode = interpolation_mode
+
+#         # 1D Convolutional backbone
+#         conv_layers = []
+#         current_channels = input_channels
+#         current_length = temporal_length
+
+#         for i in range(num_conv_layers):
+#             out_channels = hidden_dim if i == 0 else hidden_dim * 2 if i == 1 else hidden_dim * 2
+#             conv_layers.extend([
+#                 nn.Conv1d(current_channels, out_channels, kernel_size=3, stride=2, padding=1),
+#                 nn.BatchNorm1d(out_channels),
+#                 nn.GELU(),
+#                 nn.Dropout(dropout)
+#             ])
+#             current_channels = out_channels
+#             current_length = (current_length + 1) // 2
+
+#         self.conv_backbone = nn.Sequential(*conv_layers)
+#         self.final_temporal_length = current_length
+
+#         # Optional Transformer layers
+#         self.use_transformer = use_transformer
+#         if use_transformer:
+#             encoder_layer = nn.TransformerEncoderLayer(
+#                 d_model=current_channels,
+#                 nhead=nhead,
+#                 dim_feedforward=current_channels * 4,
+#                 dropout=dropout,
+#                 batch_first=True,
+#                 norm_first=True
+#             )
+#             self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_transformer_layers)
+
+#         # Temporal pooling and projection
+#         self.temporal_pool = nn.AdaptiveAvgPool1d(1)
+#         self.projection = nn.Sequential(
+#             nn.Linear(current_channels, output_dim),
+#             nn.LayerNorm(output_dim),
+#             nn.GELU(),
+#             nn.Dropout(dropout),
+#             nn.Linear(output_dim, output_dim)
+#         )
+
+#         print(f"✅ SensorEncoder initialized:")
+#         print(f"   Input: (B, {temporal_length}, {input_channels})")
+#         print(f"   Conv layers: {num_conv_layers} → Final length: {self.final_temporal_length}")
+#         print(f"   Transformer: {use_transformer} ({num_transformer_layers} layers)")
+#         print(f"   Output: (B, {output_dim})")
+
+#     def forward(self, sensor_data: torch.Tensor) -> torch.Tensor:
+#         """
+#         Args:
+#             sensor_data: (B, T, C) where T can be variable, C=1026
+#         Returns:
+#             sensor_features: (B, output_dim)
+#         """
+#         B, T, C = sensor_data.shape
+
+#         if C != self.input_channels:
+#             raise ValueError(f"Expected {self.input_channels} channels, got {C}")
+
+#         # Handle variable temporal length with interpolation
+#         if T != self.temporal_length:
+#             x = sensor_data.transpose(1, 2)  # (B, C, T)
+
+#             if self.interpolation_mode == 'cubic' and T >= 4:
+#                 x = F.interpolate(x, size=self.temporal_length, mode='cubic', align_corners=False)
+#             else:
+#                 mode = 'linear' if self.interpolation_mode == 'cubic' and T < 4 else self.interpolation_mode
+#                 align = False if mode == 'linear' else None
+#                 x = F.interpolate(x, size=self.temporal_length, mode=mode,
+#                                 align_corners=align)
+
+#             sensor_data = x.transpose(1, 2)
+
+#         # (B, T, C) → (B, C, T) for Conv1d
+#         x = sensor_data.transpose(1, 2)
+
+#         # Convolutional feature extraction
+#         if self.gradient_checkpointing and self.training:
+#             x = torch.utils.checkpoint.checkpoint(self.conv_backbone, x, use_reentrant=False)
+#         else:
+#             x = self.conv_backbone(x)
+
+#         # Optional Transformer
+#         if self.use_transformer:
+#             x = x.transpose(1, 2)  # (B, T', hidden_dim*2)
+#             if self.gradient_checkpointing and self.training:
+#                 x = torch.utils.checkpoint.checkpoint(self.transformer, x, use_reentrant=False)
+#             else:
+#                 x = self.transformer(x)
+#             x = x.transpose(1, 2)
+
+#         # Temporal pooling
+#         x = self.temporal_pool(x).squeeze(-1)  # (B, hidden_dim*2)
+
+#         # Project to output dimension
+#         sensor_features = self.projection(x)  # (B, output_dim)
+
+#         return sensor_features
+
+
 # =====================================
-# 2️⃣ Diffusion Components
+# 2️⃣ Flow Matching Components
 # =====================================
-def cosine_beta_schedule(timesteps, s=0.008):
-    """Cosine schedule from Improved DDPM paper"""
-    steps = timesteps + 1
-    x = torch.linspace(0, timesteps, steps)
-    alphas_cumprod = torch.cos(((x / timesteps) + s) / (1 + s) * torch.pi * 0.5) ** 2
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    return torch.clip(betas, 0.0001, 0.9999)
+
+class OptimalTransportConditionalFlowMatching:
+    """
+    Optimal Transport Conditional Flow Matching (OT-CFM)
+
+    Learns a vector field v(x, t) that transports samples from noise to data
+    using optimal transport paths.
+
+    Flow ODE: dx/dt = v(x, t), x(0) ~ N(0, I), x(1) = data
+
+    Training:
+    - Sample t ~ U(0, 1)
+    - Compute OT path: x_t = t * x_1 + (1-t) * x_0
+    - Compute target velocity: u_t = x_1 - x_0
+    - Loss: ||v(x_t, t) - u_t||^2
+
+    Inference:
+    - Start from x_0 ~ N(0, I)
+    - Integrate ODE: x(1) = x(0) + ∫_0^1 v(x(t), t) dt
+    - Use Euler or RK4 solver
+    """
+
+    def __init__(self, sigma_min: float = 1e-4):
+        """
+        Args:
+            sigma_min: Minimum noise level for numerical stability
+        """
+        self.sigma_min = sigma_min
+
+    def compute_flow_and_target(
+        self,
+        x_1: torch.Tensor,
+        x_0: Optional[torch.Tensor] = None,
+        t: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Compute the flow path and target velocity for training.
+
+        Optimal Transport path: x_t = t * x_1 + (1 - t) * x_0
+        Target velocity: u_t = x_1 - x_0 (constant velocity OT path)
+
+        Args:
+            x_1: Data samples (B, H, A)
+            x_0: Source samples (B, H, A), if None sample from N(0, I)
+            t: Time steps (B,) in [0, 1], if None sample uniformly
+
+        Returns:
+            x_t: Flow path samples (B, H, A)
+            u_t: Target velocity (B, H, A)
+            t: Time steps (B,)
+        """
+        B, H, A = x_1.shape
+        device = x_1.device
+
+        # Sample source from standard normal
+        if x_0 is None:
+            x_0 = torch.randn_like(x_1)
+
+        # Sample time uniformly
+        if t is None:
+            t = torch.rand(B, device=device)
+
+        # Reshape t for broadcasting
+        t = t.view(-1, 1, 1)  # (B, 1, 1)
+
+        # Optimal Transport path (linear interpolation)
+        x_t = t * x_1 + (1 - t) * x_0
+
+        # Target velocity (constant for OT)
+        u_t = x_1 - x_0
+
+        return x_t, u_t, t.squeeze(-1).squeeze(-1)
+
+    def sample_ode(
+        self,
+        velocity_model,
+        x_0: torch.Tensor,
+        num_steps: int = 10,
+        method: str = 'euler',
+        **model_kwargs
+    ) -> torch.Tensor:
+        """
+        Sample from the flow by solving the ODE: dx/dt = v(x, t)
+
+        Args:
+            velocity_model: Neural network that predicts v(x, t)
+            x_0: Initial noise samples (B, H, A)
+            num_steps: Number of integration steps
+            method: 'euler' or 'rk4'
+            **model_kwargs: Additional arguments for velocity_model
+
+        Returns:
+            x_1: Final samples (B, H, A)
+        """
+        x = x_0
+        dt = 1.0 / num_steps
+
+        for i in range(num_steps):
+            t = torch.full((x.shape[0],), i * dt, device=x.device)
+
+            if method == 'euler':
+                # Euler method: x_{i+1} = x_i + dt * v(x_i, t_i)
+                v = velocity_model(x, t, **model_kwargs)
+                x = x + dt * v
+
+            elif method == 'rk4':
+                # 4th order Runge-Kutta
+                k1 = velocity_model(x, t, **model_kwargs)
+                k2 = velocity_model(x + 0.5 * dt * k1, t + 0.5 * dt, **model_kwargs)
+                k3 = velocity_model(x + 0.5 * dt * k2, t + 0.5 * dt, **model_kwargs)
+                k4 = velocity_model(x + dt * k3, t + dt, **model_kwargs)
+                x = x + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+            else:
+                raise ValueError(f"Unknown solver method: {method}")
+
+        return x
 
 
 class DiffusionSchedule:
@@ -551,12 +948,13 @@ class RegressionActionExpert(nn.Module):
 
         print(f"✅ RegressionActionExpert initialized with fusion: {fusion_strategy}")
 
-    def forward(self, vl_tokens, z_chunk, sensor_features=None):
+    def forward(self, vl_tokens, z_chunk, sensor_features=None, robot_state_features=None):
         """
         Args:
             vl_tokens: (B, 1, vl_dim) or (B, seq_len, vl_dim)
             z_chunk: (B, H, action_dim) - action chunks
             sensor_features: (B, sensor_dim) - optional
+            robot_state_features: (B, robot_state_dim) - optional
 
         Returns:
             pred_actions: (B, H, action_dim)
@@ -564,27 +962,36 @@ class RegressionActionExpert(nn.Module):
         """
         B, H, A = z_chunk.shape
 
-        # Fuse VL and Sensor features
-        if self.fusion_strategy == 'concat' and sensor_features is not None:
+        # Combine sensor and robot state features
+        combined_features = None
+        if sensor_features is not None and robot_state_features is not None:
+            combined_features = torch.cat([sensor_features, robot_state_features], dim=-1)
+        elif sensor_features is not None:
+            combined_features = sensor_features
+        elif robot_state_features is not None:
+            combined_features = robot_state_features
+
+        # Fuse VL and combined features
+        if self.fusion_strategy == 'concat' and combined_features is not None:
             vl_pooled = vl_tokens.mean(dim=1)
-            fused = torch.cat([vl_pooled, sensor_features], dim=-1)
+            fused = torch.cat([vl_pooled, combined_features], dim=-1)
             cond = self.fusion_proj(fused).unsqueeze(1)
 
-        elif self.fusion_strategy == 'cross_attention' and sensor_features is not None:
+        elif self.fusion_strategy == 'cross_attention' and combined_features is not None:
             vl_feat = self.vl_proj(vl_tokens)
-            sensor_feat = self.sensor_proj(sensor_features).unsqueeze(1)
-            attn_out, _ = self.cross_attn(sensor_feat, vl_feat, vl_feat)
+            combined_feat = self.sensor_proj(combined_features).unsqueeze(1)
+            attn_out, _ = self.cross_attn(combined_feat, vl_feat, vl_feat)
             cond = self.fusion_proj(attn_out)
 
-        elif self.fusion_strategy == 'gated' and sensor_features is not None:
+        elif self.fusion_strategy == 'gated' and combined_features is not None:
             vl_pooled = vl_tokens.mean(dim=1)
             vl_feat = self.vl_proj(vl_pooled)
-            sensor_feat = self.sensor_proj(sensor_features)
-            gate = self.gate(torch.cat([vl_feat, sensor_feat], dim=-1))
-            fused = gate * vl_feat + (1 - gate) * sensor_feat
+            combined_feat = self.sensor_proj(combined_features)
+            gate = self.gate(torch.cat([vl_feat, combined_feat], dim=-1))
+            fused = gate * vl_feat + (1 - gate) * combined_feat
             cond = self.fusion_proj(fused).unsqueeze(1)
 
-        else:  # 'none' or sensor not provided
+        else:  # 'none' or features not provided
             vl_pooled = vl_tokens.mean(dim=1, keepdim=True)
             cond = self.fusion_proj(vl_pooled)
 
@@ -613,7 +1020,7 @@ class QwenVLAUnified(nn.Module):
     - Supports LoRA fine-tuning for VL model
 
     Args:
-        model_type: 'diffusion' or 'regression'
+        model_type: 'diffusion', 'regression', or 'flow_matching'
         vl_model_name: Qwen model name
         action_dim: Action dimension (7)
         horizon: Action prediction horizon (8)
@@ -627,6 +1034,9 @@ class QwenVLAUnified(nn.Module):
         # Diffusion params (only for model_type='diffusion')
         diffusion_timesteps: Number of diffusion steps
 
+        # Flow matching params (only for model_type='flow_matching')
+        flow_steps: Number of ODE integration steps (default: 10)
+
         # LoRA params (optional VL fine-tuning)
         finetune_vl: 'none', 'lora', 'full'
         lora_r: LoRA rank
@@ -636,48 +1046,58 @@ class QwenVLAUnified(nn.Module):
         image_resize_width: e.g., 640
     """
     def __init__(self,
-                 # Model type
-                 model_type: Literal['diffusion', 'regression'] = 'regression',
+                # Model type
+                model_type: Literal['diffusion', 'regression', 'flow_matching'] = 'flow_matching',
 
-                 # Base params
-                 vl_model_name="Qwen/Qwen2.5-VL-3B-Instruct",
-                 action_dim=7,
-                 horizon=8,
-                 hidden_dim=1024,
-                 cache_dir="/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
+                # Base params
+                vl_model_name="Qwen/Qwen2.5-VL-3B-Instruct",
+                action_dim=7,
+                horizon=8,
+                hidden_dim=1024,
+                cache_dir="/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
 
-                 # Sensor encoder params
-                 sensor_enabled=True,
-                 sensor_input_channels=1026,
-                 sensor_temporal_length=650,
-                 sensor_hidden_dim=512,
-                 sensor_output_dim=3072,
+                # Sensor encoder params
+                sensor_enabled=True,
+                sensor_input_channels=1026,
+                sensor_temporal_length=650,
+                sensor_hidden_dim=512,
+                sensor_output_dim=3072,
 
-                 # Fusion params
-                 fusion_strategy='concat',
+                # Robot state encoder params
+                robot_state_enabled=True,  # Enable robot state input (joint + pose)
 
-                 # Diffusion params
-                 diffusion_timesteps=100,
+                # Fusion params
+                fusion_strategy='concat',
 
-                 # LoRA params
-                 finetune_vl='none',
-                 lora_r=16,
-                 lora_alpha=32,
-                 lora_dropout=0.05,
+                # Diffusion params
+                diffusion_timesteps=100,
 
-                 # Image resize params
-                 image_resize_height=None,
-                 image_resize_width=None,
+                # Flow matching params
+                flow_steps=10,
+                flow_solver='euler',  # 'euler' or 'rk4'
 
-                 # Device map
-                 device_map=None):
+                # LoRA params
+                finetune_vl='none',
+                lora_r=16,
+                lora_alpha=32,
+                lora_dropout=0.05,
+
+                # Image resize params
+                image_resize_height=None,
+                image_resize_width=None,
+
+                # Device map
+                device_map=None):
         super().__init__()
 
-        if model_type not in ['diffusion', 'regression']:
-            raise ValueError(f"model_type must be 'diffusion' or 'regression', got {model_type}")
+        if model_type not in ['diffusion', 'regression', 'flow_matching']:
+            raise ValueError(f"model_type must be 'diffusion', 'regression', or 'flow_matching', got {model_type}")
 
         self.model_type = model_type
         self.sensor_enabled = sensor_enabled
+        self.robot_state_enabled = robot_state_enabled
+        self.flow_steps = flow_steps
+        self.flow_solver = flow_solver
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_enabled = True
@@ -689,9 +1109,12 @@ class QwenVLAUnified(nn.Module):
         print(f"🚀 Loading QwenVLA Unified Model")
         print(f"   Model Type: {model_type.upper()}")
         print(f"   Sensor Enabled: {sensor_enabled}")
+        print(f"   Robot State Enabled: {robot_state_enabled}")
         print(f"   Fusion Strategy: {fusion_strategy}")
         if model_type == 'diffusion':
             print(f"   Diffusion Timesteps: {diffusion_timesteps}")
+        elif model_type == 'flow_matching':
+            print(f"   Flow Steps: {flow_steps}, Solver: {flow_solver}")
 
         # VL Model
         self.processor = AutoProcessor.from_pretrained(vl_model_name)
@@ -704,6 +1127,9 @@ class QwenVLAUnified(nn.Module):
             print(f"   Image resize: {image_resize_width}x{image_resize_height}")
 
         self.vl_model = self._load_qwen_with_fallback(vl_model_name, device_map)
+
+        # Print actual VL hidden size
+        print(f"   VL Model hidden_size: {self.vl_model.config.hidden_size}")
 
         # Apply LoRA or freeze VL model
         if finetune_vl == 'lora':
@@ -736,24 +1162,49 @@ class QwenVLAUnified(nn.Module):
                 use_transformer=True,
                 num_transformer_layers=2
             ).to(dtype=torch.bfloat16, device="cuda")
+            force_bn_fp32_(self.sensor_encoder)  # 🔴 전역 캐스트 이후에 호출해야 유효
+
         else:
             self.sensor_encoder = None
 
-        # Action Expert (Diffusion or Regression)
+        # Robot State Encoder (joint + pose: 12 dims)
+        # Uses dedicated MLP-based encoder optimized for robot state
+        if self.robot_state_enabled:
+            self.robot_state_encoder = RobotStateEncoder(
+                input_dim=12,  # 6 joints + 6 poses
+                temporal_length=sensor_temporal_length,
+                hidden_dim=256,  # Smaller than sensor (robot state is simpler)
+                output_dim=sensor_output_dim,  # Same output dim as sensor for fusion
+                num_layers=3,
+                use_temporal_attention=True,
+                nhead=8,
+                dropout=0.1
+            ).to(dtype=torch.bfloat16, device="cuda")
+        else:
+            self.robot_state_encoder = None
+
+        # Action Expert (Diffusion, Regression, or Flow Matching)
+        # Combined feature dim: sensor + robot_state (both use same output_dim)
+        combined_feature_dim = sensor_output_dim * 2 if (sensor_enabled and self.robot_state_enabled) else sensor_output_dim if sensor_enabled else 0
+
         if model_type == 'diffusion':
-            self.action_expert = DiffusionActionExpert(
+            raise ValueError(
+                "Diffusion model is deprecated. Please use 'flow_matching' or 'regression' instead.\n"
+                "Flow matching provides faster inference (10 steps vs 100 steps) and better performance."
+            )
+        elif model_type == 'flow_matching':
+            self.action_expert = FlowMatchingActionExpert(
                 vl_dim=self.vl_model.config.hidden_size,
-                sensor_dim=sensor_output_dim if sensor_enabled else 0,
+                sensor_dim=combined_feature_dim,  # Now includes sensor + robot_state
                 action_dim=action_dim,
                 horizon=horizon,
                 hidden_dim=hidden_dim,
-                timesteps=diffusion_timesteps,
                 fusion_strategy=fusion_strategy if sensor_enabled else 'none'
             ).to(dtype=torch.bfloat16, device="cuda")
         else:  # regression
             self.action_expert = RegressionActionExpert(
                 vl_dim=self.vl_model.config.hidden_size,
-                sensor_dim=sensor_output_dim if sensor_enabled else 0,
+                sensor_dim=combined_feature_dim,  # Now includes sensor + robot_state
                 action_dim=action_dim,
                 horizon=horizon,
                 hidden_dim=hidden_dim,
@@ -814,7 +1265,7 @@ class QwenVLAUnified(nn.Module):
         self.cache_limit_gb = float(limit_gb)
 
     def _cache_path(self, key: str, txt: str, views: list) -> Path:
-        vlist = [v for v in views if v is not None]
+        vlist = [v for v in views if v is not None] if views is not None else []
         raw = key + "||" + txt + "||" + "|".join(vlist)
         h = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
         return self.cache_dir / f"{h}.pt"
@@ -850,7 +1301,9 @@ class QwenVLAUnified(nn.Module):
 
         with torch.inference_mode():
             if self.model_type == 'diffusion':
-                # For diffusion, pass actions=None for inference mode
+                raise ValueError("Diffusion model is deprecated. Use 'flow_matching' or 'regression' instead.")
+            elif self.model_type in ['flow_matching', 'regression']:
+                # For flow_matching/regression, pass actions=None for inference mode
                 self(text_inputs=text_inputs,
                      image_inputs=image_inputs,
                      actions=None,
@@ -871,6 +1324,7 @@ class QwenVLAUnified(nn.Module):
                 actions=None,  # For diffusion training
                 z_chunk=None,  # For regression
                 sensor_data=None,
+                robot_states=None,  # NEW: Robot state data (joint + pose)
                 cache_keys=None,
                 cache: bool = True):
         """
@@ -882,6 +1336,7 @@ class QwenVLAUnified(nn.Module):
             actions: (B, H, A) - for diffusion training
             z_chunk: (B, H, A) - for regression
             sensor_data: (B, T, C) - sensor data
+            robot_states: (B, T, 12) - robot state data (6 joints + 6 poses)
             cache_keys: Cache keys for VL features
             cache: Whether to use caching
 
@@ -905,39 +1360,51 @@ class QwenVLAUnified(nn.Module):
             sensor_data = sensor_data.to(device=device, dtype=torch.bfloat16)
             sensor_features = self.sensor_encoder(sensor_data)
 
+        # Encode robot state features
+        robot_state_features = None
+        if self.robot_state_enabled and robot_states is not None:
+            robot_states = robot_states.to(device=device, dtype=torch.bfloat16)
+            robot_state_features = self.robot_state_encoder(robot_states)
+        elif self.robot_state_enabled and robot_states is None:
+            # Debug: robot states expected but not provided
+            import warnings
+            warnings.warn("robot_state_enabled=True but robot_states is None!")
+
         # Model-specific forward
         if self.model_type == 'diffusion':
-            # Training mode: predict noise
+            raise ValueError("Diffusion model is deprecated. Use 'flow_matching' or 'regression' instead.")
+
+        elif self.model_type == 'flow_matching':
+            # Training mode: compute flow matching loss
             if actions is not None and self.training:
-                B, H, A = actions.shape
                 actions = actions.to(device=device, dtype=vl_tokens.dtype)
 
-                # Sample random timesteps
-                timesteps = torch.randint(0, self.action_expert.timesteps, (B,), device=device).long()
-
-                # Add noise
-                noise = torch.randn_like(actions)
-                noisy_actions = self.action_expert.diffusion.q_sample(actions, timesteps, noise)
-
-                # Predict noise
                 with torch.autocast(device.type, dtype=torch.bfloat16):
-                    eps_pred = self.action_expert(noisy_actions, timesteps, vl_tokens, sensor_features)
+                    loss = self.action_expert.compute_loss(
+                        actions, vl_tokens, sensor_features, robot_state_features
+                    )
 
-                return eps_pred, noise, timesteps
+                # Return loss in same format as diffusion for compatibility
+                # We'll handle this specially in training loop
+                return loss, None, None
 
-            # Inference mode: sample actions
+            # Inference mode: sample actions via ODE
             else:
                 with torch.autocast(device.type, dtype=torch.bfloat16):
                     sampled_actions = self.action_expert.sample(
-                        vl_tokens, sensor_features,
+                        vl_tokens,
+                        sensor_features,
+                        robot_state_features,
                         batch_size=vl_tokens.shape[0],
-                        ddim_steps=10
+                        num_steps=self.flow_steps,
+                        method=self.flow_solver
                     )
-                return sampled_actions
+                # Return in same format as training for compatibility with validation
+                return sampled_actions, None, None
 
         else:  # regression
             z_chunk = z_chunk.to(device=device, dtype=vl_tokens.dtype)
-            pred_actions, delta = self.action_expert(vl_tokens, z_chunk, sensor_features)
+            pred_actions, delta = self.action_expert(vl_tokens, z_chunk, sensor_features, robot_state_features)
             return pred_actions, delta
 
     def _encode_vision_features(self, text_inputs, image_inputs, cache_keys, use_cache, device):
@@ -959,7 +1426,7 @@ class QwenVLAUnified(nn.Module):
 
         def preprocess_message(args):
             txt, views, key = args
-            msg_content = [{"type": "image", "image": v} for v in views if v is not None]
+            msg_content = [{"type": "image", "image": v} for v in views if v is not None] if views is not None else []
             msg_content.append({"type": "text", "text": txt})
             messages = [{"role": "user", "content": msg_content}]
             text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -1053,14 +1520,14 @@ if __name__ == "__main__":
     )
     print(f"✅ Regression model created")
 
-    # Test diffusion
-    print("\n=== Testing Diffusion Model ===")
-    model_diff = QwenVLAUnified(
-        model_type='diffusion',
+    # Test flow matching
+    print("\n=== Testing Flow Matching Model ===")
+    model_flow = QwenVLAUnified(
+        model_type='flow_matching',
         sensor_enabled=True,
-        diffusion_timesteps=100,
+        robot_state_enabled=True,
         finetune_vl='none'
     )
-    print(f"✅ Diffusion model created")
+    print(f"✅ Flow matching model created")
 
     print("\n✅ All tests passed!")

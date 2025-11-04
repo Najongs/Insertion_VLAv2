@@ -18,6 +18,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from vla_datasets.unified_dataset import unified_collate_fn
+from vla_cache_manager import get_cache_manager
 
 # =====================================
 # 1️⃣ Action Expert (Temporal Decoder)
@@ -31,22 +32,19 @@ def build_vl_cache_distributed_optimized(
     num_workers=8,
     prefetch_factor=4,
     micro_bs=1,            # 마이크로 배치 (OOM 시 자동 백오프)
-    key_mode="full",       # "traj": traj_path 단위 캐시 / "full": (traj+lang+views) 단위
-    rank_sharded_cache=False,  # rank별 캐시 폴더 분리
     cache_dir_fallback="/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
 ):
     """
-    고속/안정 캐싱:
+    완전 고정 캐싱 시스템 (VLACacheManager 사용):
       - 마이크로배칭 + OOM 백오프
       - use_cache=False (KV cache 비활성화)
-      - rank별 캐시 폴더 분리로 fcntl 락 경합 최소화
+      - 캐시 경로: {dataset_name}_vlm{vlm_idx}.pt (instruction/image 변경에 영향 없음)
+      - Atomic save + 캐시 용량 제한 자동 관리
       - tqdm 진행률, miss/skipped 통계 표시
-      - key_mode="traj"로 두면 동일 traj는 1회만 계산 (속도 10~30배↑)
 
     model 요구사항:
       - model.vl_model, model.processor 필요
       - (선택) model.cache_dir 있으면 사용, 없으면 cache_dir_fallback 사용
-      - (선택) model._atomic_save / model._enforce_cache_limit 있으면 사용
     """
 
     rank = dist.get_rank()
@@ -59,62 +57,11 @@ def build_vl_cache_distributed_optimized(
     else:
         base_cache_dir = Path(base_cache_dir)
 
-    # rank-sharded dir (락 경쟁 최소화)
-    target_cache_dir = base_cache_dir / (f"rank_{rank}" if rank_sharded_cache else "")
-    target_cache_dir.mkdir(parents=True, exist_ok=True)
-
-    # ---------------------------
-    # 로컬 헬퍼: 안전 저장/경로 생성
-    # ---------------------------
-    def _local_atomic_save(tensor_cpu: torch.Tensor, path: Path):
-        """model에 _atomic_save가 있으면 사용, 없으면 로컬 구현"""
-        if hasattr(model, "_atomic_save"):
-            return model._atomic_save(tensor_cpu, path)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        lock_path = str(path) + ".lock"
-        with open(lock_path, "w") as lockfile:
-            try:
-                fcntl.flock(lockfile, fcntl.LOCK_EX)
-                if path.exists():
-                    return
-                torch.save(tensor_cpu, tmp)
-                os.replace(tmp, path)
-            finally:
-                fcntl.flock(lockfile, fcntl.LOCK_UN)
-
-    def _local_enforce_cache_limit(max_gb=40):
-        """model에 _enforce_cache_limit 있으면 사용, 없으면 로컬로 target_cache_dir만 정리"""
-        if hasattr(model, "_enforce_cache_limit"):
-            try:
-                # model이 자기 cache_dir을 관리한다면 호출
-                model._enforce_cache_limit(max_gb=max_gb)
-                return
-            except TypeError:
-                pass  # 시그니처 차이 무시하고 로컬 처리로 폴백
-        total_bytes = 0
-        files = []
-        for f in target_cache_dir.glob("*.pt"):
-            total_bytes += f.stat().st_size
-            files.append(f)
-        limit = max_gb * (1024 ** 3)
-        if total_bytes > limit:
-            files = sorted(files, key=lambda f: f.stat().st_mtime)
-            while total_bytes > limit and files:
-                f = files.pop(0)
-                total_bytes -= f.stat().st_size
-                f.unlink(missing_ok=True)
-
-    def _cache_path_for(traj_key: str, txt: str, views: list[str | None]) -> Path:
-        """key_mode에 따라 캐시 키 구성."""
-        if key_mode == "traj":
-            # traj_path만 기준 (같은 traj는 1회만 계산)
-            base = traj_key.split("::t=")[0]
-        else:
-            # 기존 방식: traj+lang+views 모두 반영
-            vlist = [v for v in views if v is not None]
-            base = traj_key + "||" + txt + "||" + "|".join(vlist)
-        h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:24]
-        return target_cache_dir / f"{h}.pt"
+    # VLACacheManager 초기화
+    cache_mgr = get_cache_manager(
+        cache_dir=str(base_cache_dir),
+        cache_limit_gb=50.0
+    )
 
     # ---------------------------
     # DataLoader (샘플 분배 보장)
@@ -127,7 +74,7 @@ def build_vl_cache_distributed_optimized(
         batch_size=batch_size,
         num_workers=num_workers,
         sampler=sampler,
-        collate_fn=collate_fn,
+        collate_fn=unified_collate_fn,
         prefetch_factor=prefetch_factor if num_workers > 0 else None,
         pin_memory=False,
         persistent_workers=False,
@@ -155,20 +102,29 @@ def build_vl_cache_distributed_optimized(
         for batch_idx, batch in enumerate(data_loader):
             texts = batch["instruction"]
             image_paths_list = batch["images"]
-            keys = batch["cache_keys"]
+            cache_keys = batch["cache_keys"]
+            vlm_indices = batch["vlm_indices"]
 
-            # --- 미스/스킵 분리 ---
+            # --- 미스/스킵 분리 (VLACacheManager 사용) ---
             miss_items = []
-            for key, txt, views in zip(keys, texts, image_paths_list):
-                cpath = _cache_path_for(key, txt, views)
-                if not cpath.exists():
-                    miss_items.append({"text": txt, "views": views, "key": key, "cpath": cpath})
+            for cache_key, vlm_idx, txt, views in zip(cache_keys, vlm_indices, texts, image_paths_list):
+                # cache_key format: "{dataset_name}_vlm{vlm_idx}"
+                # Extract dataset_name
+                dataset_name = cache_key.rsplit("_vlm", 1)[0]
+
+                if not cache_mgr.cache_exists(dataset_name, vlm_idx):
+                    miss_items.append({
+                        "text": txt,
+                        "views": views,
+                        "dataset_name": dataset_name,
+                        "vlm_idx": vlm_idx
+                    })
                 else:
                     total_skipped += 1
 
-            total_processed += len(keys)
+            total_processed += len(cache_keys)
             if not miss_items:
-                pbar.update(len(keys))
+                pbar.update(len(cache_keys))
                 if rank == 0:
                     cached_ratio = (total_cached / max(1, total_processed)) * 100
                     pbar.set_postfix({
@@ -222,9 +178,11 @@ def build_vl_cache_distributed_optimized(
 
                     for j, item in enumerate(sub_items):
                         pooled_single = pooled_batch[j:j+1]
-                        _local_atomic_save(
-                            pooled_single.detach().to("cpu", dtype=torch.float16),
-                            item["cpath"]
+                        # VLACacheManager로 저장
+                        cache_mgr.save_cache(
+                            dataset_name=item["dataset_name"],
+                            vlm_idx=item["vlm_idx"],
+                            vl_features=pooled_single
                         )
                         total_cached += 1
 
@@ -247,7 +205,7 @@ def build_vl_cache_distributed_optimized(
                         raise
 
             # --- 진행률 업데이트 ---
-            pbar.update(len(keys))
+            pbar.update(len(cache_keys))
             if rank == 0:
                 cached_ratio = (total_cached / max(1, total_processed)) * 100
                 pbar.set_postfix({
@@ -257,8 +215,7 @@ def build_vl_cache_distributed_optimized(
                     "GPU": f"{torch.cuda.memory_allocated(device)/1e9:.1f}GB"
                 })
 
-            # (선택) 주기적 캐시 용량 제한
-            _local_enforce_cache_limit(max_gb=40)
+            # Note: Cache limit is automatically enforced by VLACacheManager.save_cache()
 
     pbar.close()
     print(f"[Rank {rank}] ✅ Finished. Cached {total_cached} / Skipped {total_skipped}")
