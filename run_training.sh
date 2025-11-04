@@ -45,7 +45,6 @@ torchrun --nproc_per_node=$NUM_GPUS \
     --image_resize_width 640 \
     --val_split 0.05 \
     --num_workers 8 \
-    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/regression_latest.pt
 
 
 

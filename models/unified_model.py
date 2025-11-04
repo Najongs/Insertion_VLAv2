@@ -323,145 +323,6 @@ class SensorEncoder(nn.Module):
         sensor_features = self.projection(x)         # (B, output_dim)
         return sensor_features
 
-
-
-# class SensorEncoder(nn.Module):
-#     """
-#     OCT/FPI 센서 데이터 인코더: (B, T, C) where T=650 or 65, C=1026
-
-#     Architecture:
-#     - 1D Convolutional layers for temporal feature extraction
-#     - Optional Transformer layers for long-range dependencies
-#     - Projection to match VL feature dimension (3072)
-
-#     Args:
-#         input_channels: 1026 (1 force + 1025 A-scan)
-#         temporal_length: 650 (full) or 65 (async)
-#         hidden_dim: Internal hidden dimension
-#         output_dim: Output feature dimension (3072 to match Qwen VL)
-#         use_transformer: Whether to use transformer layers
-#     """
-#     def __init__(self,
-#                  input_channels=1026,
-#                  temporal_length=650,
-#                  hidden_dim=512,
-#                  output_dim=3072,
-#                  num_conv_layers=4,
-#                  use_transformer=True,
-#                  num_transformer_layers=2,
-#                  nhead=8,
-#                  dropout=0.1,
-#                  gradient_checkpointing=False,
-#                  interpolation_mode='linear'):
-#         super().__init__()
-
-#         self.input_channels = input_channels
-#         self.temporal_length = temporal_length
-#         self.output_dim = output_dim
-#         self.gradient_checkpointing = gradient_checkpointing
-#         self.interpolation_mode = interpolation_mode
-
-#         # 1D Convolutional backbone
-#         conv_layers = []
-#         current_channels = input_channels
-#         current_length = temporal_length
-
-#         for i in range(num_conv_layers):
-#             out_channels = hidden_dim if i == 0 else hidden_dim * 2 if i == 1 else hidden_dim * 2
-#             conv_layers.extend([
-#                 nn.Conv1d(current_channels, out_channels, kernel_size=3, stride=2, padding=1),
-#                 nn.BatchNorm1d(out_channels),
-#                 nn.GELU(),
-#                 nn.Dropout(dropout)
-#             ])
-#             current_channels = out_channels
-#             current_length = (current_length + 1) // 2
-
-#         self.conv_backbone = nn.Sequential(*conv_layers)
-#         self.final_temporal_length = current_length
-
-#         # Optional Transformer layers
-#         self.use_transformer = use_transformer
-#         if use_transformer:
-#             encoder_layer = nn.TransformerEncoderLayer(
-#                 d_model=current_channels,
-#                 nhead=nhead,
-#                 dim_feedforward=current_channels * 4,
-#                 dropout=dropout,
-#                 batch_first=True,
-#                 norm_first=True
-#             )
-#             self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_transformer_layers)
-
-#         # Temporal pooling and projection
-#         self.temporal_pool = nn.AdaptiveAvgPool1d(1)
-#         self.projection = nn.Sequential(
-#             nn.Linear(current_channels, output_dim),
-#             nn.LayerNorm(output_dim),
-#             nn.GELU(),
-#             nn.Dropout(dropout),
-#             nn.Linear(output_dim, output_dim)
-#         )
-
-#         print(f"✅ SensorEncoder initialized:")
-#         print(f"   Input: (B, {temporal_length}, {input_channels})")
-#         print(f"   Conv layers: {num_conv_layers} → Final length: {self.final_temporal_length}")
-#         print(f"   Transformer: {use_transformer} ({num_transformer_layers} layers)")
-#         print(f"   Output: (B, {output_dim})")
-
-#     def forward(self, sensor_data: torch.Tensor) -> torch.Tensor:
-#         """
-#         Args:
-#             sensor_data: (B, T, C) where T can be variable, C=1026
-#         Returns:
-#             sensor_features: (B, output_dim)
-#         """
-#         B, T, C = sensor_data.shape
-
-#         if C != self.input_channels:
-#             raise ValueError(f"Expected {self.input_channels} channels, got {C}")
-
-#         # Handle variable temporal length with interpolation
-#         if T != self.temporal_length:
-#             x = sensor_data.transpose(1, 2)  # (B, C, T)
-
-#             if self.interpolation_mode == 'cubic' and T >= 4:
-#                 x = F.interpolate(x, size=self.temporal_length, mode='cubic', align_corners=False)
-#             else:
-#                 mode = 'linear' if self.interpolation_mode == 'cubic' and T < 4 else self.interpolation_mode
-#                 align = False if mode == 'linear' else None
-#                 x = F.interpolate(x, size=self.temporal_length, mode=mode,
-#                                 align_corners=align)
-
-#             sensor_data = x.transpose(1, 2)
-
-#         # (B, T, C) → (B, C, T) for Conv1d
-#         x = sensor_data.transpose(1, 2)
-
-#         # Convolutional feature extraction
-#         if self.gradient_checkpointing and self.training:
-#             x = torch.utils.checkpoint.checkpoint(self.conv_backbone, x, use_reentrant=False)
-#         else:
-#             x = self.conv_backbone(x)
-
-#         # Optional Transformer
-#         if self.use_transformer:
-#             x = x.transpose(1, 2)  # (B, T', hidden_dim*2)
-#             if self.gradient_checkpointing and self.training:
-#                 x = torch.utils.checkpoint.checkpoint(self.transformer, x, use_reentrant=False)
-#             else:
-#                 x = self.transformer(x)
-#             x = x.transpose(1, 2)
-
-#         # Temporal pooling
-#         x = self.temporal_pool(x).squeeze(-1)  # (B, hidden_dim*2)
-
-#         # Project to output dimension
-#         sensor_features = self.projection(x)  # (B, output_dim)
-
-#         return sensor_features
-
-
 # =====================================
 # 2️⃣ Flow Matching Components
 # =====================================
@@ -595,7 +456,7 @@ class DiffusionSchedule:
             raise ValueError(f"Unknown schedule: {schedule}")
 
         alphas = 1.0 - betas
-        alphas_cumprod = torch.cumprod(alphas, dim=0)
+        alphas_cumprod = torch.cumprod(alphas, dim=0) 
         alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1, 0), value=1.0)
 
         # Store buffers
@@ -733,6 +594,20 @@ class DiffusionActionExpert(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, action_dim)
         )
+        
+        # === Dual output heads (ε_pred) ===
+        self.trans_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 3)  # dx, dy, dz
+        )
+        self.rot_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 3)  # dα, dβ, dγ
+        )
+        self.grip_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 1)  # gripper
+        )
 
         print(f"✅ DiffusionActionExpert initialized:")
         print(f"   Timesteps: {timesteps}, Fusion: {fusion_strategy}")
@@ -772,7 +647,11 @@ class DiffusionActionExpert(nn.Module):
         x = self.temporal_encoder(x)
 
         # Predict noise
-        eps_pred = self.output_head(x)
+        eps_trans = self.trans_head(x)
+        eps_rot = self.rot_head(x)
+        eps_grip = self.grip_head(x)
+
+        eps_pred = torch.cat([eps_trans, eps_rot, eps_grip], dim=-1)
 
         return eps_pred
 
@@ -945,6 +824,18 @@ class RegressionActionExpert(nn.Module):
             nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, action_dim)
         )
+        self.trans_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 3)  # dx, dy, dz
+        )
+        self.rot_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 3)  # dα, dβ, dγ
+        )
+        self.grip_head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 1)  # gripper
+        )
 
         print(f"✅ RegressionActionExpert initialized with fusion: {fusion_strategy}")
 
@@ -1000,7 +891,10 @@ class RegressionActionExpert(nn.Module):
         decoded = self.temporal_decoder(tgt, cond)
 
         # Predict action deltas
-        delta = self.output_head(decoded)
+        delta_trans = self.trans_head(decoded)
+        delta_rot = self.rot_head(decoded)
+        delta_grip = self.grip_head(decoded)
+        delta = torch.cat([delta_trans, delta_rot, delta_grip], dim=-1)
         pred_actions = z_chunk + delta
 
         return pred_actions, delta
@@ -1086,6 +980,10 @@ class QwenVLAUnified(nn.Module):
                 image_resize_height=None,
                 image_resize_width=None,
 
+                # VL optimization params
+                parallel_view_encoding=False,  # Enable multi-view parallel encoding
+                view_aggregation='mean',  # 'mean', 'max', or 'attention'
+
                 # Device map
                 device_map=None):
         super().__init__()
@@ -1105,6 +1003,8 @@ class QwenVLAUnified(nn.Module):
         self.strict_cache = False
         self.action_dim = action_dim
         self.horizon = horizon
+        self.parallel_view_encoding = parallel_view_encoding  # ✅ New optimization flag
+        self.view_aggregation = view_aggregation
 
         print(f"🚀 Loading QwenVLA Unified Model")
         print(f"   Model Type: {model_type.upper()}")
@@ -1125,6 +1025,12 @@ class QwenVLAUnified(nn.Module):
             self.processor.image_processor.min_pixels = target_pixels
             self.processor.image_processor.max_pixels = target_pixels
             print(f"   Image resize: {image_resize_width}x{image_resize_height}")
+
+        # VL optimization configuration
+        if parallel_view_encoding:
+            print(f"   ⚡ Parallel View Encoding: ENABLED (aggregation={view_aggregation})")
+        else:
+            print(f"   Sequential View Encoding (default)")
 
         self.vl_model = self._load_qwen_with_fallback(vl_model_name, device_map)
 
@@ -1406,12 +1312,46 @@ class QwenVLAUnified(nn.Module):
             z_chunk = z_chunk.to(device=device, dtype=vl_tokens.dtype)
             pred_actions, delta = self.action_expert(vl_tokens, z_chunk, sensor_features, robot_state_features)
             return pred_actions, delta
-
+        
     def _encode_vision_features(self, text_inputs, image_inputs, cache_keys, use_cache, device):
-        """Encode VL features with caching"""
+        """
+        Encode VL features with optional parallel encoding
+
+        Routes to parallel or sequential encoding based on self.parallel_view_encoding
+        """
+        # Use parallel encoding if enabled AND not using cache
+        if self.parallel_view_encoding and not use_cache:
+            # Debug: print once to confirm parallel encoding is used
+            if not hasattr(self, '_parallel_encoding_confirmed'):
+                print("🚀 Using PARALLEL view encoding for faster VL updates!")
+                self._parallel_encoding_confirmed = True
+            return self._encode_vision_features_parallel(text_inputs, image_inputs, device)
+
+        # Otherwise use sequential encoding (with caching support)
+        if not hasattr(self, '_sequential_encoding_confirmed'):
+            print("📝 Using SEQUENTIAL view encoding")
+            self._sequential_encoding_confirmed = True
+        return self._encode_vision_features_sequential(text_inputs, image_inputs, cache_keys, use_cache, device)
+
+    def _encode_vision_features_sequential(self, text_inputs, image_inputs, cache_keys, use_cache, device):
+        """Sequential encoding (robust version with None handling)"""
         pooled_vl_tokens_dict = {}
         miss_items = []
 
+        # ✅ 1. None-safe handling
+        if text_inputs is None:
+            text_inputs = []
+        if image_inputs is None:
+            image_inputs = [None] * len(text_inputs)
+        if cache_keys is None:
+            cache_keys = [f"seq_{i}" for i in range(len(text_inputs))]
+
+        n = min(len(text_inputs), len(image_inputs), len(cache_keys))
+        text_inputs = text_inputs[:n]
+        image_inputs = image_inputs[:n]
+        cache_keys = cache_keys[:n]
+
+        # ✅ 2. Cache handling
         if use_cache:
             for txt, views, key in zip(text_inputs, image_inputs, cache_keys):
                 cache_path = self._cache_path(key, txt, views)
@@ -1426,7 +1366,7 @@ class QwenVLAUnified(nn.Module):
 
         def preprocess_message(args):
             txt, views, key = args
-            msg_content = [{"type": "image", "image": v} for v in views if v is not None] if views is not None else []
+            msg_content = [{"type": "image", "image": v} for v in (views or []) if v is not None]
             msg_content.append({"type": "text", "text": txt})
             messages = [{"role": "user", "content": msg_content}]
             text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
@@ -1451,10 +1391,11 @@ class QwenVLAUnified(nn.Module):
                             pooled_vl_tokens_dict[key] = pooled
                             continue
 
+                    # ✅ text-only safe input
                     inputs = self.processor(
                         text=[text],
-                        images=vision_inputs,
-                        videos=video_inputs,
+                        images=vision_inputs if vision_inputs else None,
+                        videos=video_inputs if video_inputs else None,
                         padding=True,
                         return_tensors="pt"
                     ).to(device=device, dtype=torch.bfloat16, non_blocking=True)
@@ -1470,10 +1411,245 @@ class QwenVLAUnified(nn.Module):
 
                     pooled_vl_tokens_dict[key] = pooled.to(dtype=torch.bfloat16)
 
+        if not pooled_vl_tokens_dict:
+            raise RuntimeError("⚠️ No valid VL tokens could be generated or loaded.")
+
         pooled_vl_tokens = [pooled_vl_tokens_dict[k] for k in cache_keys if k in pooled_vl_tokens_dict]
         vl_tokens = torch.cat(pooled_vl_tokens, dim=0)
-
         return vl_tokens
+
+
+    def _encode_vision_features_parallel(self, text_inputs, image_inputs, device):
+        """Parallel multi-view encoding (robust version)"""
+        batch_vl_features = []
+
+        # ✅ None-safe setup
+        if text_inputs is None:
+            text_inputs = []
+        if image_inputs is None:
+            image_inputs = [None] * len(text_inputs)
+
+        n = min(len(text_inputs), len(image_inputs))
+        text_inputs = text_inputs[:n]
+        image_inputs = image_inputs[:n]
+
+        for txt, views in zip(text_inputs, image_inputs):
+            if not views:
+                # text-only
+                messages = [{"role": "user", "content": [{"type": "text", "text": txt}]}]
+                text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+                inputs = self.processor(text=[text], images=None, padding=True, return_tensors="pt").to(
+                    device=device, dtype=torch.bfloat16, non_blocking=True
+                )
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                    outputs = self.vl_model(**inputs, output_hidden_states=True, return_dict=True, use_cache=False)
+                    vl_tokens = outputs.hidden_states[-1]
+                    pooled = vl_tokens.mean(dim=1, keepdim=True)
+                    batch_vl_features.append(pooled)
+            else:
+                # multi-view
+                batch_msgs, batch_texts, batch_imgs = [], [], []
+                for img in views:
+                    msg = [{"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": txt}]}]
+                    text = self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=False)
+                    vision_inputs, _ = process_vision_info(msg)
+                    batch_texts.append(text)
+                    batch_imgs.append(vision_inputs)
+
+                inputs = self.processor(
+                    text=batch_texts, images=batch_imgs, padding=True, return_tensors="pt"
+                ).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                    outputs = self.vl_model(**inputs, output_hidden_states=True, return_dict=True, use_cache=False)
+                    vl_tokens = outputs.hidden_states[-1]
+                    view_features = vl_tokens.mean(dim=1, keepdim=True)
+
+                    if self.view_aggregation == "mean":
+                        aggregated = view_features.mean(dim=0, keepdim=True)
+                    elif self.view_aggregation == "max":
+                        aggregated, _ = view_features.max(dim=0, keepdim=True)
+                    else:
+                        aggregated = view_features.mean(dim=0, keepdim=True)
+
+                    batch_vl_features.append(aggregated)
+
+        if not batch_vl_features:
+            raise RuntimeError("⚠️ No VL features could be encoded (check inputs).")
+
+        return torch.cat(batch_vl_features, dim=0)
+
+    
+    # def _encode_vision_features(self, text_inputs, image_inputs, cache_keys, use_cache, device):
+    #     """
+    #     Encode VL features with caching
+
+    #     Routes to parallel or sequential encoding based on self.parallel_view_encoding
+    #     """
+    #     if self.parallel_view_encoding and not use_cache:
+    #         # Use parallel encoding for real-time inference (no caching)
+    #         return self._encode_vision_features_parallel(text_inputs, image_inputs, device)
+    #     else:
+    #         # Use sequential encoding (default, with caching support)
+    #         return self._encode_vision_features_sequential(text_inputs, image_inputs, cache_keys, use_cache, device)
+
+    # def _encode_vision_features_sequential(self, text_inputs, image_inputs, cache_keys, use_cache, device):
+    #     """Sequential encoding (original implementation with caching)"""
+    #     pooled_vl_tokens_dict = {}
+    #     miss_items = []
+
+    #     if use_cache:
+    #         for txt, views, key in zip(text_inputs, image_inputs, cache_keys):
+    #             cache_path = self._cache_path(key, txt, views)
+    #             if cache_path.exists():
+    #                 pooled = torch.load(cache_path, map_location="cpu")
+    #                 pooled = pooled.pin_memory().to(device=device, non_blocking=True, dtype=torch.bfloat16)
+    #                 pooled_vl_tokens_dict[key] = pooled
+    #             else:
+    #                 miss_items.append((txt, views, key))
+    #     else:
+    #         miss_items = list(zip(text_inputs, image_inputs, cache_keys))
+
+    #     def preprocess_message(args):
+    #         txt, views, key = args
+    #         msg_content = [{"type": "image", "image": v} for v in views if v is not None] if views is not None else []
+    #         msg_content.append({"type": "text", "text": txt})
+    #         messages = [{"role": "user", "content": msg_content}]
+    #         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    #         vision_inputs, video_inputs = process_vision_info(messages)
+    #         return key, txt, views, text, vision_inputs, video_inputs
+
+    #     if miss_items and use_cache and getattr(self, "strict_cache", False):
+    #         missing_keys = [key for _, _, key in miss_items]
+    #         raise FileNotFoundError(f"Missing cached features for keys: {missing_keys}")
+
+    #     if miss_items:
+    #         with ThreadPoolExecutor(max_workers=24) as executor:
+    #             results = list(executor.map(preprocess_message, miss_items))
+
+    #         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+    #             for key, txt, views, text, vision_inputs, video_inputs in results:
+    #                 if use_cache:
+    #                     cache_path = self._cache_path(key, txt, views)
+    #                     if cache_path.exists():
+    #                         pooled = torch.load(cache_path, map_location="cpu")
+    #                         pooled = pooled.pin_memory().to(device=device, non_blocking=True, dtype=torch.bfloat16)
+    #                         pooled_vl_tokens_dict[key] = pooled
+    #                         continue
+
+    #                 inputs = self.processor(
+    #                     text=[text],
+    #                     images=vision_inputs,
+    #                     videos=video_inputs,
+    #                     padding=True,
+    #                     return_tensors="pt"
+    #                 ).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+
+    #                 outputs = self.vl_model(**inputs, output_hidden_states=True, return_dict=True)
+    #                 vl_tokens = outputs.hidden_states[-1]
+    #                 pooled = vl_tokens.mean(dim=1, keepdim=True)
+
+    #                 if use_cache:
+    #                     cache_path = self._cache_path(key, txt, views)
+    #                     self._atomic_save(pooled.detach().to("cpu", dtype=torch.float16), cache_path)
+    #                     self._enforce_cache_limit()
+
+    #                 pooled_vl_tokens_dict[key] = pooled.to(dtype=torch.bfloat16)
+
+    #     pooled_vl_tokens = [pooled_vl_tokens_dict[k] for k in cache_keys if k in pooled_vl_tokens_dict]
+    #     vl_tokens = torch.cat(pooled_vl_tokens, dim=0)
+
+    #     return vl_tokens
+
+    # def _encode_vision_features_parallel(self, text_inputs, image_inputs, device):
+    #     """
+    #     Parallel multi-view encoding for faster inference
+
+    #     Key idea: Process each view separately in a batch for shorter sequences
+    #     - Sequential: 1 long sequence with 5 images (~5000 tokens) - O(n²) attention
+    #     - Parallel: 5 short sequences with 1 image each (~1000 tokens each) - O(5×m²) where m << n
+
+    #     Expected speedup: 2-3x due to reduced self-attention complexity
+    #     """
+    #     batch_vl_features = []
+
+    #     for txt, views in zip(text_inputs, image_inputs):
+    #         if views is None or len(views) == 0:
+    #             # Text-only case
+    #             messages = [{"role": "user", "content": [{"type": "text", "text": txt}]}]
+    #             text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    #             inputs = self.processor(
+    #                 text=[text],
+    #                 images=None,
+    #                 padding=True,
+    #                 return_tensors="pt"
+    #             ).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+
+    #             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+    #                 outputs = self.vl_model(**inputs, output_hidden_states=True, return_dict=True, use_cache=False)
+    #                 vl_tokens = outputs.hidden_states[-1]
+    #                 pooled = vl_tokens.mean(dim=1, keepdim=True)
+    #                 batch_vl_features.append(pooled)
+
+    #         else:
+    #             # Multi-view case: process each view separately
+    #             view_features_list = []
+
+    #             # Create batch of single-view messages
+    #             batch_messages = []
+    #             batch_vision_inputs = []
+
+    #             for img in views:
+    #                 msg = [{"role": "user", "content": [
+    #                     {"type": "image", "image": img},
+    #                     {"type": "text", "text": txt}
+    #                 ]}]
+    #                 batch_messages.append(msg)
+
+    #                 # Preprocess each message
+    #                 text = self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=False)
+    #                 vision_inputs, _ = process_vision_info(msg)
+    #                 batch_vision_inputs.append((text, vision_inputs))
+
+    #             # Process all views in a single batch
+    #             texts = [item[0] for item in batch_vision_inputs]
+    #             images = [item[1] for item in batch_vision_inputs]
+
+    #             inputs = self.processor(
+    #                 text=texts,  # List[str] with len = num_views
+    #                 images=images,  # List[images] with len = num_views
+    #                 padding=True,
+    #                 return_tensors="pt"
+    #             ).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+
+    #             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+    #                 # Single forward pass for all views
+    #                 outputs = self.vl_model(**inputs, output_hidden_states=True, return_dict=True, use_cache=False)
+    #                 vl_tokens = outputs.hidden_states[-1]  # (num_views, seq_len, hidden_dim)
+
+    #                 # Pool each view separately
+    #                 view_features = vl_tokens.mean(dim=1, keepdim=True)  # (num_views, 1, hidden_dim)
+
+    #                 # Aggregate views
+    #                 if self.view_aggregation == 'mean':
+    #                     # Average pooling across views
+    #                     aggregated = view_features.mean(dim=0, keepdim=True)  # (1, 1, hidden_dim)
+    #                 elif self.view_aggregation == 'max':
+    #                     # Max pooling across views
+    #                     aggregated, _ = view_features.max(dim=0, keepdim=True)  # (1, 1, hidden_dim)
+    #                 elif self.view_aggregation == 'attention':
+    #                     # Learnable attention aggregation (TODO: implement)
+    #                     # For now, fallback to mean
+    #                     aggregated = view_features.mean(dim=0, keepdim=True)
+    #                 else:
+    #                     aggregated = view_features.mean(dim=0, keepdim=True)
+
+    #                 batch_vl_features.append(aggregated)
+
+    #     # Concatenate batch
+    #     vl_tokens = torch.cat(batch_vl_features, dim=0)  # (B, 1, hidden_dim)
+
+    #     return vl_tokens
 
     @torch.no_grad()
     def predict_action(self, text_inputs, image_inputs, sensor_data, cache_keys, **kwargs):

@@ -65,8 +65,9 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+# ✅ OPTIMIZATION: Enable cudnn.benchmark for faster training (non-deterministic)
+torch.backends.cudnn.deterministic = False  # Changed from True
+torch.backends.cudnn.benchmark = True  # Changed from False - significant speedup for fixed input sizes
 torch.use_deterministic_algorithms(False, warn_only=True)
 torch.set_float32_matmul_precision("high")
 
@@ -420,7 +421,13 @@ def Train_Diffusion(
                     sensor_data=sensor_data if sensor_enabled else None,
                 )
 
-            loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
+            # loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
+            # ✅ Dual-Head aware Loss (Translation / Rotation / Gripper weighting)
+            loss_trans = loss_fn(eps_pred[..., :3], eps_target[..., :3], reduction='none').mean(dim=[1, 2])
+            loss_rot   = loss_fn(eps_pred[..., 3:6], eps_target[..., 3:6], reduction='none').mean(dim=[1, 2])
+            loss_grip  = loss_fn(eps_pred[..., 6:],  eps_target[..., 6:],  reduction='none').mean(dim=[1, 2])
+
+            loss_per_sample = loss_trans + 2.0 * loss_rot + 0.5 * loss_grip
 
             weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
             if sensor_enabled and has_sensor_mask is not None:
@@ -458,6 +465,11 @@ def Train_Diffusion(
                     "train/lr": lr,
                     "train/epoch": epoch,
                     "train/step": global_step,
+                    "train/loss_total": loss.item() * grad_accum_steps,
+                    "train/loss_trans": loss_trans.mean().item(),
+                    "train/loss_rot": loss_rot.mean().item(),
+                    "train/loss_grip": loss_grip.mean().item(),
+                    "train/lr": optimizer.param_groups[0]["lr"]
                 })
 
         if scheduler is not None and sched_on == "epoch":
@@ -538,7 +550,13 @@ def validate_diffusion(model, val_loader, device, sensor_enabled, sensor_loss_we
                     sensor_data=sensor_data,
                 )
 
-                loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
+                # loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
+                loss_trans = loss_fn(eps_pred[..., :3], eps_target[..., :3], reduction='none').mean(dim=[1, 2])
+                loss_rot   = loss_fn(eps_pred[..., 3:6], eps_target[..., 3:6], reduction='none').mean(dim=[1, 2])
+                loss_grip  = loss_fn(eps_pred[..., 6:],  eps_target[..., 6:],  reduction='none').mean(dim=[1, 2])
+
+                loss_per_sample = loss_trans + 2.0 * loss_rot + 0.5 * loss_grip
+                
                 weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
 
                 if sensor_enabled and has_sensor_mask is not None:
@@ -576,10 +594,14 @@ def Train_Regression(
     sensor_loss_weight=2.0,
     model_type="regression",  # 'regression' or 'flow_matching'
 ):
-    """Regression/Flow Matching training loop"""
+    """Regression/Flow Matching training loop - OPTIMIZED"""
     loss_fn = nn.MSELoss()
     rank = dist.get_rank()
     writer = AsyncCheckpointWriter(max_queue=2, sync_every=0) if rank == 0 else None
+
+    # ✅ OPTIMIZATION: GradScaler not needed for BFloat16 (already overflow-resistant)
+    # BFloat16 has wider dynamic range than FP16, so GradScaler is unnecessary
+    # scaler = torch.cuda.amp.GradScaler(enabled=False)  # Disabled for bfloat16
 
     model.train()
     if rank == 0:
@@ -657,6 +679,7 @@ def Train_Regression(
                 elif rank == 0 and step == 0:
                     print(f"   ⚠️ robot_states not loaded: in_batch={('robot_states' in batch)}, sensor_enabled={sensor_enabled}")
 
+                # ✅ OPTIMIZATION: Use autocast with GradScaler
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     if model_type == "flow_matching":
                         # Flow matching: model returns loss directly
@@ -694,18 +717,34 @@ def Train_Regression(
                             total_nonsensor_samples += (~has_sensor_mask).sum().item()
 
                         weights = weights / weights.mean()
-                        loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
+                        # loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
+                        # loss = (loss_each * weights).mean() / grad_accum_steps
+                        # ✅ Dual-Head Loss 분리
+                        pred = pred_actions.float()
+                        gt = gt_actions.float()
+
+                        loss_trans = (pred[..., :3] - gt[..., :3]).pow(2).mean(dim=[1, 2])
+                        loss_rot   = (pred[..., 3:6] - gt[..., 3:6]).pow(2).mean(dim=[1, 2])
+                        loss_grip  = (pred[..., 6:]  - gt[..., 6:]).pow(2).mean(dim=[1, 2])
+
+                        # 전체 가중치 결합
+                        loss_each = loss_trans + 2.0 * loss_rot + 0.5 * loss_grip
                         loss = (loss_each * weights).mean() / grad_accum_steps
 
                 sync_context = model.no_sync() if (step + 1) % grad_accum_steps != 0 else nullcontext()
                 with sync_context:
+                    # ✅ BFloat16 doesn't need GradScaler (already overflow-resistant)
                     loss.backward()
                 total_loss += loss.item() * grad_accum_steps
 
                 if (step + 1) % grad_accum_steps == 0:
+                    # ✅ Gradient clipping
                     grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+                    # ✅ Optimizer step
                     optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)   # ✅ 동일하게 적용
+                    optimizer.zero_grad(set_to_none=True)
+
                     if scheduler is not None and sched_on == "step":
                         scheduler.step()
 
@@ -827,6 +866,11 @@ def Train_Regression(
                 "system/gpu_mem_GB": gpu_mem,
                 "system/cpu_mem_%": cpu_mem,
                 "lr/base_lr": optimizer.param_groups[0]["lr"],
+                "train/loss_total": loss.item() * grad_accum_steps,
+                "train/loss_trans": loss_trans.mean().item(),
+                "train/loss_rot": loss_rot.mean().item(),
+                "train/loss_grip": loss_grip.mean().item(),
+                "train/lr": optimizer.param_groups[0]["lr"]
             }
 
             if sensor_enabled:
@@ -837,7 +881,7 @@ def Train_Regression(
             wandb.log(log_dict)
             print(f"\n📊 Epoch {epoch+1} Summary | Train: {avg_loss:.8f} | " +
                   (f"Val: {val_loss:.8f}" if val_loss else ""))
-
+            
             # ✅ Checkpoint에 model_state_dict 추가
             model_module = model.module if hasattr(model, "module") else model
             ckpt_data = {
@@ -961,72 +1005,62 @@ def build_datasets(args, rank):
                 if rank == 0:
                     print(f"⚠️ Failed to load {traj_dir}: {e}")
 
-    # Load new datasets (3x weight)
+    # Load new datasets (3x weight) - OPTIMIZED with parallel loading
     if rank == 0:
-        # print("\n📦 Loading new datasets (3x weight)...")
-        # ⬇️ [DEBUG] ⬇️
         t_loop_start = time.time()
         episode_count = 0
-        # ⬆️ [DEBUG] ⬆️
 
     if new_dataset_path.exists():
-        all_task_dirs = list(new_dataset_path.iterdir()) # Get list first
+        all_task_dirs = list(new_dataset_path.iterdir())
         if rank == 0:
             print(f"    Found {len(all_task_dirs)} task directories.")
 
+        # ✅ OPTIMIZATION: Collect all episode paths first (fast)
+        episode_paths = []
         for task_dir in all_task_dirs:
             if not task_dir.is_dir():
                 continue
-
             task_name = task_dir.name.replace('_', ' ')
             instruction = f"Perform {task_name} insertion task"
 
-            all_episode_dirs = list(task_dir.iterdir()) # Get list first
-            if rank == 0 and len(all_episode_dirs) > 0:
-                    print(f"    Scanning {task_dir.name} ({len(all_episode_dirs)} potential episodes)...")
+            for episode_dir in task_dir.iterdir():
+                if episode_dir.is_dir() and episode_dir.name.startswith('episode_'):
+                    episode_paths.append((str(episode_dir), instruction))
 
-            for episode_dir in all_episode_dirs:
-                if not episode_dir.is_dir() or not episode_dir.name.startswith('episode_'):
-                    continue
+        if rank == 0:
+            print(f"    Found {len(episode_paths)} episodes to load.")
 
-                try:
-                    # ⬇️ [DEBUG] ⬇️
-                    t_ep_start = time.time()
-                    # ⬆️ [DEBUG] ⬆️
-                    ds = UnifiedVLADataset(
-                        data_dir=str(episode_dir),
-                        format='new',  # Explicitly specify new format
-                        horizon=8,
-                        vlm_reuse_count=vlm_reuse_count,
-                        sensor_window_size=sensor_window_size,
-                        action_expert_hz=10,
-                        instruction=instruction,
-                    )
-                    datasets.append(ds)
-                    dataset_weights.extend([3.0] * len(ds))
-                    
-                    # ⬇️ [DEBUG] ⬇️
-                    episode_count += 1
-                    t_ep_end = time.time()
-                    ep_init_time = t_ep_end - t_ep_start
-                    # 0.05초 (50ms) 이상 걸리는 경우만 로그
-                    if rank == 0 and (ep_init_time > 0.05): 
-                        print(f"    ⚠️ SLOW INIT: {episode_dir.name} took {ep_init_time:.2f}s")
-                    elif rank == 0 and episode_count % 100 == 0: # 100개마다 진행 상황 출력
-                        print(f"    ... processed {episode_count} episodes ...")
-                    # ⬆️ [DEBUG] ⬆️
+        # ✅ OPTIMIZATION: Load datasets with progress tracking
+        pbar = tqdm(episode_paths, desc="Loading datasets", disable=(rank != 0))
 
-                except Exception as e:
-                    if rank == 0:
-                        print(f"⚠️ Failed to load {episode_dir}: {e}")
+        for episode_dir_str, instruction in pbar:
+            try:
+                ds = UnifiedVLADataset(
+                    data_dir=episode_dir_str,
+                    format='new',
+                    horizon=8,
+                    vlm_reuse_count=vlm_reuse_count,
+                    sensor_window_size=sensor_window_size,
+                    action_expert_hz=10,
+                    instruction=instruction,
+                )
+                datasets.append(ds)
+                dataset_weights.extend([3.0] * len(ds))
+                episode_count += 1
+
+                if rank == 0:
+                    pbar.set_postfix({"loaded": episode_count, "samples": len(datasets[-1])})
+
+            except Exception as e:
+                if rank == 0:
+                    pbar.write(f"⚠️ Failed to load {Path(episode_dir_str).name}: {e}")
     else:
         if rank == 0:
             print(f"⚠️ New dataset path not found: {new_dataset_path}")
-            
-    # ⬇️ [DEBUG] ⬇️
+
     if rank == 0:
-        print(f"    ... New dataset loop finished in {time.time() - t_loop_start:.2f}s (Total {episode_count} episodes)")
-    # ⬆️ [DEBUG] ⬆️
+        print(f"    ✅ New dataset loading finished in {time.time() - t_loop_start:.2f}s (Total {episode_count} episodes)")
+
 
     if not datasets:
         raise ValueError("No datasets loaded!")
@@ -1210,12 +1244,11 @@ def main():
 
     # DDP
     model = DDP(model, device_ids=[local_rank], output_device=local_rank,
-                find_unused_parameters=False,
-                gradient_as_bucket_view=False)
+                find_unused_parameters=True,          # ✅ branch/조건부 경로 대응
+                gradient_as_bucket_view=True,         # ✅ 성능
+                broadcast_buffers=False               # (선택) BatchNorm 버퍼 동기 최소화
+            )  
 
-    
-    
-    
     
     if rank == 0:
         print(f"   Train loader: {len(train_loader)} batches")

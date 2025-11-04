@@ -1,0 +1,3 @@
+Model,Type,VL (ms),Sensor (ms),Action (ms),Total (ms),FPS
+Regression (Sequential Encoding),regression,54.08,5.51,4.04,63.63,15.71
+Regression (Parallel Encoding),regression,51.89,5.52,4.08,61.49,16.26

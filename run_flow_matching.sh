@@ -7,9 +7,13 @@
 # Number of GPUs
 NUM_GPUS=4
 
+# torchrun --nproc_per_node=4 TRAIN_Unified.py \
+#     --model-type regression \
+#     --mode cache
+
 # Training configuration
 MODEL_TYPE="flow_matching"  # Use flow matching
-EPOCHS=100
+EPOCHS=30
 BATCH_SIZE=32  # Per GPU
 GRAD_ACCUM=4  # Effective batch size = 4 GPUs × 1 × 4 = 16
 LR=1e-4
@@ -46,27 +50,46 @@ echo "   Fusion Strategy: ${FUSION}"
 echo ""
 
 # Run training with torchrun
-torchrun \
-    --nproc_per_node=${NUM_GPUS} \
+# torchrun \
+#     --nproc_per_node=${NUM_GPUS} \
+#     --master_port=29500 \
+#     TRAIN_Unified.py \
+#     --model-type ${MODEL_TYPE} \
+#     --mode train \
+#     --dataset_dir "${OLD_DATA}" \
+#     --epochs ${EPOCHS} \
+#     --batch_size ${BATCH_SIZE} \
+#     --grad_accum ${GRAD_ACCUM} \
+#     --lr ${LR} \
+#     --sensor_enabled \
+#     --sensor_loss_weight ${SENSOR_LOSS_WEIGHT} \
+#     --fusion_strategy ${FUSION} \
+#     --image_resize_height ${IMG_HEIGHT} \
+#     --image_resize_width ${IMG_WIDTH} \
+#     --val_split 0.1 \
+#     --num_workers 4 \
+#     --sched_on step \
+    # --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/flow_matching_latest.pt
+
+torchrun --nproc_per_node=$NUM_GPUS \
     --master_port=29500 \
     TRAIN_Unified.py \
-    --model-type ${MODEL_TYPE} \
+    --model-type regression \
     --mode train \
-    --dataset_dir "${OLD_DATA}" \
+    --dataset_dir /home/najo/NAS/VLA/dataset \
+    --batch_size 64 \
+    --grad_accum 16 \
+    --lr 5e-5 \
+    --sensor_lr 5e-4 \
+    --min_lr 1e-6 \
     --epochs ${EPOCHS} \
-    --batch_size ${BATCH_SIZE} \
-    --grad_accum ${GRAD_ACCUM} \
-    --lr ${LR} \
     --sensor_enabled \
-    --sensor_loss_weight ${SENSOR_LOSS_WEIGHT} \
-    --fusion_strategy ${FUSION} \
-    --image_resize_height ${IMG_HEIGHT} \
-    --image_resize_width ${IMG_WIDTH} \
-    --val_split 0.1 \
-    --num_workers 4 \
-    --sched_on step \
-    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/flow_matching_latest.pt
-
+    --sensor_loss_weight 2.0 \
+    --fusion_strategy concat \
+    --image_resize_height 360 \
+    --image_resize_width 640 \
+    --val_split 0.05 \
+    --num_workers 8 \
 
 echo ""
 echo "✅ Flow Matching Training Complete!"

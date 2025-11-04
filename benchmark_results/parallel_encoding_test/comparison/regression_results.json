@@ -1,0 +1,58 @@
+{
+  "model_name": "Regression",
+  "model_type": "regression",
+  "config": {
+    "num_iterations": 3,
+    "num_views": 5,
+    "enable_sensor": true,
+    "enable_robot_states": true,
+    "horizon": 8,
+    "warmup_iterations": 3,
+    "device": "cuda:0"
+  },
+  "vl_encoding": {
+    "mean": 0.05221414209033052,
+    "std": 0.0005933500078592332,
+    "min": 0.05167139880359173,
+    "max": 0.053039741702377796
+  },
+  "sensor_encoding": {
+    "mean": 0.005668154451996088,
+    "std": 0.00026518555815179993,
+    "min": 0.005451221950352192,
+    "max": 0.0060415551997721195
+  },
+  "action_prediction": {
+    "mean": 0.0040192023540536565,
+    "std": 8.79694294235756e-06,
+    "min": 0.004009034018963575,
+    "max": 0.0040304940193891525
+  },
+  "total": {
+    "mean": 0.06190149889638027,
+    "std": 0.0004937175715906359,
+    "min": 0.06139154173433781,
+    "max": 0.06256950693204999,
+    "fps": 16.154697670147623
+  },
+  "raw_results": [
+    {
+      "vl_encoding_time": 0.053039741702377796,
+      "sensor_encoding_time": 0.005511686205863953,
+      "action_prediction_time": 0.004018079023808241,
+      "total_time": 0.06256950693204999
+    },
+    {
+      "vl_encoding_time": 0.05193128576502204,
+      "sensor_encoding_time": 0.005451221950352192,
+      "action_prediction_time": 0.004009034018963575,
+      "total_time": 0.06139154173433781
+    },
+    {
+      "vl_encoding_time": 0.05167139880359173,
+      "sensor_encoding_time": 0.0060415551997721195,
+      "action_prediction_time": 0.0040304940193891525,
+      "total_time": 0.061743448022753
+    }
+  ]
+}
