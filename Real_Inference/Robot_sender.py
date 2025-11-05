@@ -241,6 +241,57 @@ class ZmqPublisher(threading.Thread):
              print("✅ ZMQ Publisher stopped.")
 
 
+class ZmqSubscriber(threading.Thread):
+    def __init__(self, robot, address, port, stop_event):
+        super().__init__(daemon=True)
+        self.robot = robot
+        self.address = address
+        self.port = port
+        self.stop_event = stop_event
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.SUB)
+        self.socket.connect(f"tcp://{address}:{port}")
+        self.socket.setsockopt(zmq.SUBSCRIBE, b"robot_cmd")
+        print(f"✅ ZMQ Subscriber connected to {address}:{port}")
+
+    def run(self):
+        print("▶️ ZMQ Subscriber listening for ΔEE commands...")
+        while not self.stop_event.is_set():
+            t0 = time.time()
+            try:
+                topic, msg = self.socket.recv_multipart(flags=zmq.NOBLOCK)
+                dx, dy, dz, da, db, dr = struct.unpack("<6f", msg)
+
+                # --- Clamp movement for safety ---
+                dx = max(min(dx, 1.0), -1.0)
+                dy = max(min(dy, 1.0), -1.0)
+                dz = max(min(dz, 1.0), -1.0)
+                da = max(min(da, 2.0), -2.0)
+                db = max(min(db, 2.0), -2.0)
+                dr = max(min(dr, 2.0), -2.0)
+
+                # --- Check status before move ---
+                st = self.robot.GetStatusRobot()
+                if not st.error_status:
+                    self.robot.MoveLinRelTrf(dx, dy, dz, da, db, dr)
+                    # self.robot.MoveLinRelWrf(dx, dy, dz, da, db, dr) #world frame 기준이 맞을 수도?
+
+            except zmq.Again:
+                pass
+            except Exception as e:
+                print(f"[ZmqSubscriber ERR] {e}")
+                try:
+                    self.robot.ResetError()
+                    self.robot.ResumeMotion()
+                except Exception:
+                    pass
+
+            # --- Maintain 10Hz rate ---
+            elapsed = time.time() - t0
+            if elapsed < 0.1:
+                time.sleep(0.1 - elapsed)
+
+
 # ============================================================
 # 5️⃣ 로봇 매니저 (유지)
 # ============================================================
@@ -340,7 +391,6 @@ def main():
     if args.run_tag:
         OUTPUT_DIR = f"./dataset/Robot_Data_{args.run_tag}"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    # Use logging instead of print for consistency
     logging.info(f"Output directory set to: {OUTPUT_DIR}")
 
     stop_event = threading.Event()
@@ -349,144 +399,81 @@ def main():
 
     sampler = None
     sender = None
+    subscriber = None
 
     try:
         if args.robot == "on":
             logging.info("Robot mode is ON.")
-            with RobotManager() as manager: # This handles connection and disconnection
+            with RobotManager() as manager:
                 manager.setup()
+
+                # --- Start sampler (100Hz) ---
                 sampler_csv = os.path.join(OUTPUT_DIR, f"robot_rt_{clock.now():.3f}.csv")
                 sampler = RtSampler(manager.robot, sampler_csv, clock, rate_hz=100)
                 sampler.start()
 
-                # --- Start ZMQ Publisher ---
+                # --- Start ZMQ Publisher (robot_state) ---
                 sender = ZmqPublisher(sampler, clock, ZMQ_PUB_ADDRESS, ZMQ_PUB_PORT, stop_event, rate_hz=SENDER_RATE_HZ)
                 sender.start()
-                # ---
 
-                logging.info("Starting robot movement...")
-                manager.move_angle_points([
-                    # # 눈 트로카 진입
-                    (51.093, -0.2565, 27.4365, -1.001, 24.416, -34.72),
-                    (51.045512, 6.187758, 28.528616, -1.326412, 16.839833, -34.399135),
-                    # White silcone 정 중앙 진입
-                    # (3.690021, 5.897145, -4.96812, -2.972649, 72.278089, -31.883483),
-                    # (3.892684, 4.795177, 4.345131, -3.21338, 64.089572, -31.189514)
-                    # Yellow point
-                    # (14.501583, 12.217297, -9.380752, -6.259415, 69.049158, -20.116909),
-                    # (14.501583, 10.889355, -0.808301, -6.631389, 61.850281, -19.223427),
-                    # Blue point
-                    # (22.653065, -6.43853, 13.368501, -11.400336, 64.353812, -10.190971),
-                    # (22.451522, -6.69128, 18.439332, -11.846308, 59.594355, -9.312273),
-                    # Green point
-                    # (-11.08406, -14.223258, 19.90672, 2.596527, 60.188596, -47.93344),
-                    # (-12.106412, -13.965453, 28.088387, 3.398665, 51.812863, -49.678461),
-                    # Red point
-                    # (-7.636594, 10.304372, -6.479386, 0.471633, 66.053139, -43.848464),
-                    # (-7.636594, 9.089121, 2.088439, 0.504451, 58.70083, -43.9191),
-                ])
-                logging.info("First movement sequence finished.")
+                # --- Start ZMQ Subscriber (robot_cmd) ---
+                subscriber = ZmqSubscriber(manager.robot, "127.0.0.1", 5557, stop_event)
+                subscriber.start()
 
-                # // // white point
-                # // MoveJoints(3.690021, 5.897145, -4.96812, -2.972649, 72.278089, -31.883483)
-                # // MoveJoints(3.892684, 4.795177, 4.345131, -3.21338, 64.089572, -31.189514)
-                # // MoveJoints(3.690021, 5.897145, -4.96812, -2.972649, 72.278089, -31.883483)
+                logging.info("✅ System running in real-time ΔEE control mode.")
+                logging.info("   Waiting for external delta actions via ZMQ topic 'robot_cmd'...")
+                logging.info("   Press Ctrl+C to stop safely.")
 
-                # // //yellow point
-                # MoveJoints(14.501583, 12.217297, -9.380752, -6.259415, 69.049158, -20.116909)
-                # MoveJoints(14.501583, 10.889355, -0.808301, -6.631389, 61.850281, -19.223427)
-                # MoveJoints(14.501583, 12.217297, -9.380752, -6.259415, 69.049158, -20.116909)
-
-                # // // blue point
-                # //MoveJoints(22.653065, -6.43853, 13.368501, -11.400336, 64.353812, -10.190971)
-                # //MoveJoints(22.451522, -6.69128, 18.439332, -11.846308, 59.594355, -9.312273)
-                # //MoveJoints(22.653065, -6.43853, 13.368501, -11.400336, 64.353812, -10.190971)
-
-                # // // green point
-                # // MoveJoints(-11.08406, -14.223258, 19.90672, 2.596527, 60.188596, -47.93344)
-                # // MoveJoints(-12.106412, -13.965453, 28.088387, 3.398665, 51.812863, -49.678461)
-                # // MoveJoints(-11.08406, -14.223258, 19.90672, 2.596527, 60.188596, -47.93344)
-
-                # // // red point
-                # // MoveJoints(-7.636594, 10.304372, -6.479386, 0.471633, 66.053139, -43.848464)
-                # // MoveJoints(-7.636594, 9.089121, 2.088439, 0.504451, 58.70083, -43.9191)
-                # // MoveJoints(-7.636594, 10.304372, -6.479386, 0.471633, 66.053139, -43.848464)
-
-
-                # --- Stop Sampler and Sender ---
-                logging.info("Signaling sampler and sender to stop...")
-                stop_event.set() # Signal threads to stop after movements
-                # Join is handled in the finally block
-                # ---
-
-                # Move back and to noisy home AFTER signaling stop
-                # This ensures the threads capture the end of the main movement
-                logging.info("Moving back to initial position...")
-                manager.robot.SetJointVel(1)
-                manager.move_angle_points([
-                    # 눈 트로카 후퇴
-                    (51.093, -0.2565, 27.4365, -1.001, 24.416, -34.72),
-                    # White silcone 정 중앙 후퇴
-                    # (3.690021, 5.897145, -4.96812, -2.972649, 72.278089, -31.883483)
-                    # Yellow point
-                    # (14.501583, 12.217297, -9.380752, -6.259415, 69.049158, -20.116909)
-                    # Blue point
-                    # (22.653065, -6.43853, 13.368501, -11.400336, 64.353812, -10.190971)
-                    # Green point
-                    # (-11.08406, -14.223258, 19.90672, 2.596527, 60.188596, -47.93344),
-                    # Red point
-                    # (-7.636594, 10.304372, -6.479386, 0.471633, 66.053139, -43.848464),
-                ])
-                manager.robot.SetJointVel(8)
-                noise = random.uniform(-5.0, 5.0)
-                logging.info(f"Moving to noisy home position with noise: {noise:.2f}...")
-                home_pose_noisy = (.0+noise, 0.0+noise, 0.0+noise, -5.0, 0.0, 30.0)
-                manager.move_angle_points([home_pose_noisy])
-                logging.info("Robot movements complete.")
+                while not stop_event.is_set():
+                    time.sleep(0.5)
 
         else:
-            logging.info("Robot mode is OFF. Script will idle. Press Ctrl+C to exit.")
+            logging.info("Robot mode is OFF. Script idle mode.")
             while not stop_event.is_set():
-                try: time.sleep(1)
-                except KeyboardInterrupt: logging.info("\nCtrl+C detected."); stop_event.set()
+                try:
+                    time.sleep(1)
+                except KeyboardInterrupt:
+                    stop_event.set()
 
     except KeyboardInterrupt:
-        logging.info("\nCtrl+C detected during robot operation. Stopping threads...")
+        logging.info("🛑 Ctrl+C detected, stopping threads...")
         stop_event.set()
-    except mdr.MecademicException as e:
-        logging.error(f"\n--- Mecademic Robot Error: {e} ---")
-        stop_event.set()
-    except Exception as e:
-        logging.error(f"\n--- An unexpected error occurred: {e} ---")
-        logging.exception("Error details:") # Log traceback
-        stop_event.set()
-    finally:
-        # --- Ensure threads are stopped and joined ---
-        if not stop_event.is_set():
-             logging.info("Setting stop event in finally block...")
-             stop_event.set()
+        try:
+            manager.robot.StopMotion()
+        except Exception:
+            pass
 
-        # Stop the clock thread first
+    except mdr.MecademicException as e:
+        logging.error(f"⚠️ Mecademic Robot Error: {e}")
+        stop_event.set()
+
+    except Exception as e:
+        logging.error(f"⚠️ Unexpected error: {e}")
+        logging.exception("Detailed traceback:")
+        stop_event.set()
+
+    finally:
+        # --- Ensure all threads and robot are stopped cleanly ---
+        if not stop_event.is_set():
+            stop_event.set()
+
         clock.stop()
         logging.info("Clock stopped.")
 
-        # Join threads (wait for them to finish)
-        # It's generally safer to join the sender first as it depends on the sampler
+        if subscriber and subscriber.is_alive():
+            logging.info("Waiting for subscriber to finish...")
+            subscriber.join(timeout=3.0)
+
         if sender and sender.is_alive():
-            logging.info("Waiting for sender thread to finish...")
-            sender.join(timeout=5.0)
-            if sender.is_alive(): logging.warning("Sender thread did not exit cleanly.")
-            else: logging.info("Sender thread finished.")
+            logging.info("Waiting for sender to finish...")
+            sender.join(timeout=3.0)
 
         if sampler and sampler.is_alive():
-            logging.info("Waiting for sampler thread to finish (CSV writing)...")
-            sampler.join(timeout=5.0)
-            if sampler.is_alive(): logging.warning("Sampler thread did not exit cleanly.")
-            else: logging.info("Sampler thread finished.")
-        # ---
+            logging.info("Waiting for sampler to finish...")
+            sampler.join(timeout=3.0)
 
-        logging.info("Data collection script finished.")
-
+        logging.info("✅ All threads terminated.")
+        logging.info("Program exited cleanly.")
 
 if __name__ == "__main__":
     main()
