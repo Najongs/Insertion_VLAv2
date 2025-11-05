@@ -13,15 +13,15 @@ NUM_GPUS=4
 
 # Training configuration
 MODEL_TYPE="flow_matching"  # Use flow matching
-EPOCHS=30
-BATCH_SIZE=32  # Per GPU
-GRAD_ACCUM=4  # Effective batch size = 4 GPUs × 1 × 4 = 16
+EPOCHS=100
+BATCH_SIZE=64  # Per GPU
+GRAD_ACCUM=8  # Effective batch size = 4 GPUs × 1 × 4 = 16
 LR=1e-4
 WEIGHT_DECAY=0.01
 
 # Sensor configuration
 SENSOR_ENABLED=true
-SENSOR_LOSS_WEIGHT=2.0
+SENSOR_LOSS_WEIGHT=1.0
 
 # Fusion strategy
 FUSION="concat"  # Options: concat, cross_attention, gated, none
@@ -32,7 +32,7 @@ NEW_DATA="/home/najo/NAS/VLA/dataset/New_dataset"
 
 # Sampling weights (new:old ratio)
 OLD_WEIGHT=1.0
-NEW_WEIGHT=3.0
+NEW_WEIGHT=1.0
 
 # Image resize for faster training
 IMG_HEIGHT=360
@@ -50,26 +50,26 @@ echo "   Fusion Strategy: ${FUSION}"
 echo ""
 
 # Run training with torchrun
-# torchrun \
-#     --nproc_per_node=${NUM_GPUS} \
-#     --master_port=29500 \
-#     TRAIN_Unified.py \
-#     --model-type ${MODEL_TYPE} \
-#     --mode train \
-#     --dataset_dir "${OLD_DATA}" \
-#     --epochs ${EPOCHS} \
-#     --batch_size ${BATCH_SIZE} \
-#     --grad_accum ${GRAD_ACCUM} \
-#     --lr ${LR} \
-#     --sensor_enabled \
-#     --sensor_loss_weight ${SENSOR_LOSS_WEIGHT} \
-#     --fusion_strategy ${FUSION} \
-#     --image_resize_height ${IMG_HEIGHT} \
-#     --image_resize_width ${IMG_WIDTH} \
-#     --val_split 0.1 \
-#     --num_workers 4 \
-#     --sched_on step \
-    # --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/flow_matching_latest.pt
+torchrun \
+    --nproc_per_node=${NUM_GPUS} \
+    --master_port=29500 \
+    TRAIN_Unified.py \
+    --model-type ${MODEL_TYPE} \
+    --mode train \
+    --dataset_dir "${OLD_DATA}" \
+    --epochs ${EPOCHS} \
+    --batch_size ${BATCH_SIZE} \
+    --grad_accum ${GRAD_ACCUM} \
+    --lr ${LR} \
+    --sensor_enabled \
+    --sensor_loss_weight ${SENSOR_LOSS_WEIGHT} \
+    --fusion_strategy ${FUSION} \
+    --image_resize_height ${IMG_HEIGHT} \
+    --image_resize_width ${IMG_WIDTH} \
+    --val_split 0.05 \
+    --num_workers 8 \
+    --sched_on step \
+    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/flow_matching_latest.pt
 
 torchrun --nproc_per_node=$NUM_GPUS \
     --master_port=29500 \
@@ -77,19 +77,20 @@ torchrun --nproc_per_node=$NUM_GPUS \
     --model-type regression \
     --mode train \
     --dataset_dir /home/najo/NAS/VLA/dataset \
-    --batch_size 64 \
-    --grad_accum 16 \
+    --batch_size ${BATCH_SIZE} \
+    --grad_accum ${GRAD_ACCUM} \
     --lr 5e-5 \
     --sensor_lr 5e-4 \
     --min_lr 1e-6 \
     --epochs ${EPOCHS} \
     --sensor_enabled \
-    --sensor_loss_weight 2.0 \
+    --sensor_loss_weight 1.0 \
     --fusion_strategy concat \
     --image_resize_height 360 \
     --image_resize_width 640 \
     --val_split 0.05 \
     --num_workers 8 \
+    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/regression_latest.pt
 
 echo ""
 echo "✅ Flow Matching Training Complete!"
