@@ -282,7 +282,7 @@ def robot_init():
     print("[ROBOT] ->", send_and_get(robot_sock, "SetEom(1)", 1.0))
     print("[ROBOT] ->", send_and_get(robot_sock, "SetAutoConf(1)", 1.0))
     print("[ROBOT] ->", send_and_get(robot_sock, "SetAutoConfTurn(1)", 1.0))
-    print("[ROBOT] ->", send_and_get(robot_sock, "SetConf(1, 1, -1)", 1.0))
+    print("[ROBOT] ->", send_and_get(robot_sock, "SetConf(1, 1, 1)", 1.0))
     print("[ROBOT] ->", send_and_get(robot_sock, f"SetVelTimeout({VEL_TIMEOUT})", 1.0))
 
     print("✅ [ROBOT] Robot ready: homed & no error")
