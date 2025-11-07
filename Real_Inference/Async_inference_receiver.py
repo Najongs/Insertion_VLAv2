@@ -256,6 +256,7 @@ class Config:
     # 🔥 NEW: Robot state settings
     ROBOT_STATE_ENABLED = True
     ROBOT_STATE_DIM = 12  # 6 joints + 6 poses
+    ROBOT_STATE_BUFFER_LENGTH = 100  # 100 samples @ 100Hz = 1 second window
 
     FUSION_STRATEGY = 'concat'
 
@@ -265,7 +266,7 @@ class Config:
 
     # Network settings
     ZMQ_CAM_PULL_PORT = 5555
-    ZMQ_ROBOT_PUB_ADDRESS = "10.130.41.111"
+    ZMQ_ROBOT_PUB_ADDRESS = "127.0.0.1"  # Default: same machine as robot_command_receiver
     ZMQ_ROBOT_PUB_PORT = 5556
     ZMQ_ROBOT_TOPIC = b"robot_state"
     ZMQ_CMD_PUSH_ADDRESS = "127.0.0.1"  # Assuming robot_command_receiver is on the same machine
@@ -533,10 +534,11 @@ class AsyncVLAInferenceEngine:
     - Action Thread: Predicts actions at 10Hz using cached VL features
     - VL features reused 4x before update
     """
-    def __init__(self, config: Config, checkpoint_path: str = None, performance_monitor: PerformanceMonitor = None):
+    def __init__(self, config: Config, checkpoint_path: str = None, performance_monitor: PerformanceMonitor = None, verbose: bool = False):
         self.config = config
         self.device = torch.device(config.DEVICE)
         self.performance_monitor = performance_monitor
+        self.verbose = verbose
 
         print(f"\n{'='*80}")
         print(f"Initializing Async VLA Inference Engine")
@@ -568,6 +570,7 @@ class AsyncVLAInferenceEngine:
             sensor_temporal_length=config.SENSOR_TEMPORAL_LENGTH,
             sensor_output_dim=2048,  # Must match checkpoint! (was 3072)
             robot_state_enabled=config.ROBOT_STATE_ENABLED,
+            robot_state_temporal_length=config.ROBOT_STATE_BUFFER_LENGTH,  # 100 samples @ 100Hz
             fusion_strategy=config.FUSION_STRATEGY,
             image_resize_height=config.IMAGE_RESIZE_HEIGHT,
             image_resize_width=config.IMAGE_RESIZE_WIDTH,
@@ -612,7 +615,7 @@ class AsyncVLAInferenceEngine:
         This is the slow operation (~381ms with 5 views @ 640x360)
         """
         start_time = time.time()
-        if args.verbose:
+        if self.verbose:
             print(f"[VL] Encoding {len(images_dict)} views...")
         
         # Save images temporarily
@@ -643,7 +646,7 @@ class AsyncVLAInferenceEngine:
             )
         t_encode_end = time.time()
         encode_time = (t_encode_end - t_encode_start) * 1000
-        if args.verbose:
+        if self.verbose:
             print(f"[VL] Vision/Text encoding took {encode_time:.1f} ms")
 
         elapsed = (time.time() - start_time) * 1000
@@ -786,7 +789,7 @@ class AsyncVLAInferenceEngine:
             )
             self.performance_monitor.add_timing(timing_record)
 
-        if args.verbose:
+        if self.verbose:
             print(f"[INFER] VLM Features       : Used update #{current_vl_update_number}")
             print(f"[INFER] Sensor Encoding    : {timings.get('sensor_encoding', 0):.1f} ms")
             print(f"[INFER] Robot State Encoding : {timings.get('robot_encoding', 0):.1f} ms")
@@ -992,7 +995,7 @@ def main():
     parser.add_argument('--flow-steps', type=int, default=10,
                        help='ODE integration steps for flow matching (default: 10)')
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging for debugging.")
-    parser.add_argument('--robot-ip', type=str, default='127.0.0.1', help='IP address of the robot state publisher (robot_command_receiver.py).')
+    parser.add_argument('--robot-ip', type=str, default='10.130.41.111', help='IP address of the robot state publisher (robot_command_receiver.py).')
     args = parser.parse_args()
 
     config = Config()
@@ -1056,13 +1059,13 @@ def main():
         save_buffer=sensor_save_buffer
     )
     robot_state_buffer = RobotStateCircularBuffer(
-        max_length=config.SENSOR_TEMPORAL_LENGTH,  # Same window as sensor
+        max_length=config.ROBOT_STATE_BUFFER_LENGTH,  # 100 samples @ 100Hz
         state_dim=config.ROBOT_STATE_DIM,
         save_buffer=None  # Robot state already saved separately
     )
 
     # Initialize inference engine
-    inference_engine = AsyncVLAInferenceEngine(config, args.checkpoint, performance_monitor)
+    inference_engine = AsyncVLAInferenceEngine(config, args.checkpoint, performance_monitor, verbose=args.verbose)
 
     # ZMQ Setup
     ctx = zmq.Context.instance()
@@ -1127,8 +1130,8 @@ def main():
     print(f"Action Expert: {config.ACTION_EXPERT_HZ} Hz (every {action_period*1000:.0f}ms)")
     print(f"VL Update: ~2.6 Hz (VL features reused {config.VLM_REUSE_COUNT}x)")
     print(f"Image Resolution: {config.IMAGE_RESIZE_WIDTH}x{config.IMAGE_RESIZE_HEIGHT}")
-    print(f"Sensor Window: {config.SENSOR_TEMPORAL_LENGTH} samples (100ms)")
-    print(f"Robot State: ENABLED (12 dims: 6 joints + 6 poses)")
+    print(f"Sensor Window: {config.SENSOR_TEMPORAL_LENGTH} samples (100ms @ 650Hz)")
+    print(f"Robot State: ENABLED ({config.ROBOT_STATE_BUFFER_LENGTH} samples @ 100Hz, 12 dims: 6 joints + 6 poses)")
     print(f"Device: {config.DEVICE}")
     print(f"Data Saving: {'Enabled' if args.save_data else 'Disabled'}")
     print(f"\nWaiting for data from all sources (images, sensor, robot state)...")
@@ -1342,7 +1345,7 @@ def main():
                         print(f"[WAIT] VL Features: {inference_engine.vl_features is not None} | "
                               f"Images: {image_buffer.is_ready()} ({len(image_buffer.latest_images)}/5) | "
                               f"Sensor: {sensor_buffer.is_ready()} ({sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}) | "
-                              f"Robot: {robot_state_buffer.is_ready()} ({robot_state_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH})")
+                              f"Robot: {robot_state_buffer.is_ready()} ({robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH})")
                         last_action_time = now
 
             # Status print
@@ -1354,7 +1357,7 @@ def main():
                 print(f"Actions: {stats['action_count']} | Action avg: {stats['action_avg_time_ms']:.1f}ms")
                 print(f"Images recv: {', '.join([f'{v}:{cam_recv_count[v]}' for v in sorted(cam_recv_count.keys())])}")
                 print(f"Sensor buffer: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
-                print(f"Robot buffer: {robot_state_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
+                print(f"Robot buffer: {robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH}")
 
                 if robot_state:
                     print(f"Robot: J1={robot_state['joints'][0]:.2f}°, Px={robot_state['pose'][0]:.2f}mm")

@@ -985,6 +985,7 @@ class QwenVLAUnified(nn.Module):
 
                 # Robot state encoder params
                 robot_state_enabled=True,  # Enable robot state input (joint + pose)
+                robot_state_temporal_length=100,  # Temporal window for robot state (100 samples @ 100Hz = 1s)
 
                 # Fusion params
                 fusion_strategy='concat',
@@ -1119,7 +1120,7 @@ class QwenVLAUnified(nn.Module):
         if self.robot_state_enabled:
             self.robot_state_encoder = RobotStateEncoder(
                 input_dim=12,  # 6 joints + 6 poses
-                temporal_length=sensor_temporal_length,
+                temporal_length=robot_state_temporal_length,  # Use robot state temporal length
                 model_dim=256,  # Smaller than sensor (robot state is simpler)
                 output_dim=sensor_output_dim,  # Same output dim as sensor for fusion
                 num_layers=3,
