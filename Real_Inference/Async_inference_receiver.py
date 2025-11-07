@@ -996,6 +996,9 @@ def main():
                        help='ODE integration steps for flow matching (default: 10)')
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging for debugging.")
     parser.add_argument('--robot-ip', type=str, default='10.130.41.111', help='IP address of the robot state publisher (robot_command_receiver.py).')
+    parser.add_argument('--auto-start', action='store_true', help='Automatically send START command to robot before inference')
+    parser.add_argument('--start-joints', type=float, nargs=6, default=[0, 0, 0, 0, 0, 0],
+                       help='Start joint positions for auto-start (default: [0,0,0,0,0,0])')
     args = parser.parse_args()
 
     config = Config()
@@ -1114,6 +1117,13 @@ def main():
     last_action_time = time.time()
     action_period = 1.0 / config.ACTION_EXPERT_HZ  # 0.1s for 10Hz
     last_status_print = time.time()
+
+    # Auto-start flag
+    start_command_sent = False
+
+    # Action sending statistics
+    action_send_success = 0
+    action_send_failed = 0
 
     # Signal handler
     def sigint_handler(sig, frame):
@@ -1277,6 +1287,24 @@ def main():
                 )
 
                 if data_ready:
+                    # Send START command once if auto-start is enabled
+                    if args.auto_start and not start_command_sent:
+                        print(f"\n🚀 Sending AUTO-START command to robot...")
+                        start_cmd = {
+                            "cmd": "start",
+                            "start_joints": args.start_joints,
+                            "lock_j6": False
+                        }
+                        try:
+                            cmd_sock.send_json(start_cmd, zmq.DONTWAIT)
+                            print(f"✅ START command sent: {start_cmd}")
+                            start_command_sent = True
+                            time.sleep(0.5)  # Give robot time to process start command
+                        except zmq.Again:
+                            print("⚠️ Failed to send START command (socket busy)")
+                        except Exception as e:
+                            print(f"❌ Error sending START command: {e}")
+
                     if args.verbose:
                         print(f"[INFER] Preparing to run inference #{len(inference_results) + 1}...")
                     # Get sensor data
@@ -1331,12 +1359,15 @@ def main():
                         
                         try:
                             cmd_sock.send_json(robot_cmd, zmq.DONTWAIT)
+                            action_send_success += 1
                             if args.verbose:
-                                print(f"[ACTION] Sent dpose: [{delta_pose[0]:.3f}, {delta_pose[1]:.3f}, ...]")
+                                print(f"[ACTION] ✅ Sent dpose: [{delta_pose[0]:.4f}, {delta_pose[1]:.4f}, {delta_pose[2]:.4f}, {delta_pose[3]:.4f}, {delta_pose[4]:.4f}, {delta_pose[5]:.4f}]")
                         except zmq.Again:
-                            print("⚠️ [ACTION] Robot command socket busy, command dropped.")
+                            action_send_failed += 1
+                            print(f"⚠️ [ACTION] Robot command socket busy, command dropped. (Failed: {action_send_failed})")
                         except Exception as e:
-                            print(f"💥 [ACTION] Error sending robot command: {e}")
+                            action_send_failed += 1
+                            print(f"💥 [ACTION] Error sending robot command: {e} (Failed: {action_send_failed})")
 
                     last_action_time = now
 
@@ -1356,6 +1387,7 @@ def main():
                 print(f"\n--- Status ({datetime.now().strftime('%H:%M:%S')}) ---")
                 print(f"VL Updates: {stats['vl_update_count']} | VL avg: {stats['vl_avg_time_ms']:.0f}ms")
                 print(f"Actions: {stats['action_count']} | Action avg: {stats['action_avg_time_ms']:.1f}ms")
+                print(f"Actions Sent: {action_send_success} | Failed: {action_send_failed} | Success Rate: {100*action_send_success/(action_send_success+action_send_failed) if (action_send_success+action_send_failed)>0 else 0:.1f}%")
                 print(f"Images recv: {', '.join([f'{v}:{cam_recv_count[v]}' for v in sorted(cam_recv_count.keys())])}")
                 print(f"Sensor buffer: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
                 print(f"Robot buffer: {robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH}")
@@ -1423,6 +1455,11 @@ def main():
             print(f"Action Avg Time: {stats['action_avg_time_ms']:.1f}ms (~{1000/stats['action_avg_time_ms']:.1f}Hz)")
         else:
             print(f"Action Avg Time: N/A (no actions executed)")
+        print(f"\nAction Commands Sent to Robot:")
+        print(f"  Successful: {action_send_success}")
+        print(f"  Failed: {action_send_failed}")
+        if (action_send_success + action_send_failed) > 0:
+            print(f"  Success Rate: {100*action_send_success/(action_send_success+action_send_failed):.1f}%")
 
         if args.save_data:
             print(f"\nData saved:")
