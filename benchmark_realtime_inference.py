@@ -105,28 +105,25 @@ class ModelBenchmark:
         """Prepare a sample for inference"""
         sample = dataset[sample_idx]
 
-        # ✅ CRITICAL: Load actual image paths from dataset (ignore cache for real-time)
-        # Images are stored in data_dir/images/{camera_view}/*.jpg
-        if sample.get("images") is None or not isinstance(sample["images"], list):
-            # Get vlm_idx from sample
-            vlm_idx = sample.get('vlm_idx', 0)
+        # Get vlm_idx from sample
+        vlm_idx = sample.get('vlm_idx', 0)
 
-            # Load image paths from dataset.images dict (same as _load_vl_or_images)
-            image_paths = []
-            if hasattr(dataset, 'images') and isinstance(dataset.images, dict):
-                for view_name in sorted(dataset.images.keys()):
-                    view_images = dataset.images[view_name]
-                    if len(view_images) > 0:
-                        img_idx = min(vlm_idx, len(view_images) - 1)
-                        image_paths.append(view_images[img_idx])
+        # Load image paths from dataset.images dict
+        image_paths = []
+        if hasattr(dataset, 'images') and isinstance(dataset.images, dict):
+            for view_name in sorted(dataset.images.keys()):
+                view_images = dataset.images[view_name]
+                if len(view_images) > 0:
+                    img_idx = min(vlm_idx, len(view_images) - 1)
+                    image_paths.append(view_images[img_idx])
 
-            sample["images"] = image_paths if image_paths else None
+        sample["images"] = image_paths if image_paths else None
 
-            if sample["images"] is None or len(sample["images"]) == 0:
-                print(f"⚠️ Warning: Could not find images in {dataset.data_dir}")
-                print(f"   vlm_idx: {vlm_idx}")
-                print(f"   Available camera views: {list(dataset.images.keys()) if hasattr(dataset, 'images') else 'N/A'}")
-                print(f"   Will use text-only VL encoding")
+        if sample["images"] is None or len(sample["images"]) == 0:
+            print(f"⚠️ Warning: Could not find images in {dataset.data_dir}")
+            print(f"   vlm_idx: {vlm_idx}")
+            print(f"   Available camera views: {list(dataset.images.keys()) if hasattr(dataset, 'images') else 'N/A'}")
+            print(f"   Will use text-only VL encoding")
 
         # Limit number of views
         if isinstance(sample["images"], list):
@@ -707,7 +704,7 @@ def main():
                 sensor_input_channels=1026,
                 sensor_temporal_length=65,
                 sensor_output_dim=3072,
-                robot_state_enabled=True,
+                robot_state_enabled=not args.disable_robot_states,
                 fusion_strategy='concat',
                 finetune_vl='none',
                 image_resize_height=360,
