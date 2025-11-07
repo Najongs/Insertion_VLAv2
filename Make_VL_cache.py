@@ -47,8 +47,13 @@ def build_vl_cache_distributed_optimized(
       - (선택) model.cache_dir 있으면 사용, 없으면 cache_dir_fallback 사용
     """
 
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
+    distributed = dist.is_available() and dist.is_initialized()
+    if distributed:
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+    else:
+        rank = 0
+        world_size = 1
 
     # base cache dir
     base_cache_dir = getattr(model, "cache_dir", None)
@@ -66,14 +71,18 @@ def build_vl_cache_distributed_optimized(
     # ---------------------------
     # DataLoader (샘플 분배 보장)
     # ---------------------------
-    sampler = DistributedSampler(
-        dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False
-    )
+    sampler = None
+    if distributed:
+        sampler = DistributedSampler(
+            dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False
+        )
+
     data_loader = DataLoader(
         dataset,
         batch_size=batch_size,
         num_workers=num_workers,
         sampler=sampler,
+        shuffle=False if sampler else False,
         collate_fn=unified_collate_fn,
         prefetch_factor=prefetch_factor if num_workers > 0 else None,
         pin_memory=False,
@@ -82,7 +91,8 @@ def build_vl_cache_distributed_optimized(
 
     total_local = math.ceil(len(dataset) / world_size)
     print(f"[Rank {rank}] Assigned ~{total_local} samples for caching.")
-    print(f"[Rank {rank}] CUDA ready: {torch.cuda.is_available()}, device={torch.cuda.current_device()}")
+    current_device = torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
+    print(f"[Rank {rank}] CUDA ready: {torch.cuda.is_available()}, device={current_device}")
 
     # ---------------------------
     # 캐싱 루프

@@ -211,9 +211,14 @@ class UnifiedVLADataset(Dataset):
             else:
                 # Grounding prompt for live mode
                 self.instruction = (
-                    f"TASK: {task_name}. "
-                    f"PROMPT: Based on the multi-view images, first, detect the <ref>insertion target</ref> and the <ref>robot gripper</ref>. "
-                    f"Then, generate the action to move the gripper towards the target."
+                    f"You are an expert robot operator for a delicate insertion task. "
+                    f"Your goal is to guide the robot to insert its tool into the '{task_name}' target."
+                    f"Analyze the image and determine the next action."
+                    f"Output your analysis in this format: "
+                    f"1) Target Analysis: [FULLY_VISIBLE/PARTIALLY_VISIBLE/NOT_VISIBLE], [FAR/MID/NEAR/TOUCHING]. "
+                    f"2) Current State: [Briefly describe the tool-target relationship]. "
+                    f"3) Next Action: [Choose ONE: MOVE_FORWARD, MOVE_BACKWARD, MOVE_LEFT, MOVE_RIGHT, MOVE_UP, MOVE_DOWN, ROTATE_CW, ROTATE_CCW, ALIGN_TARGET, INSERT, STOP]. "
+                    f"4) Confidence: [HIGH/MEDIUM/LOW]."
                 )
         else:
             self.instruction = instruction
@@ -325,9 +330,14 @@ class UnifiedVLADataset(Dataset):
             else:
                 # Grounding prompt for live mode
                 self.instruction = (
-                    f"TASK: {task_name} insertion. "
-                    f"PROMPT: In the multi-view images, detect the <ref>insertion target</ref> and the <ref>robot gripper</ref>. "
-                    f"Based on their spatial relationship, generate the action to insert the tool into the target."
+                    f"You are an expert robot operator for a delicate insertion task. "
+                    f"Your goal is to guide the robot to insert its tool into the '{task_name}' target."
+                    f"Analyze the image and determine the next action."
+                    f"Output your analysis in this format: "
+                    f"1) Target Analysis: [FULLY_VISIBLE/PARTIALLY_VISIBLE/NOT_VISIBLE], [FAR/MID/NEAR/TOUCHING]. "
+                    f"2) Current State: [Briefly describe the tool-target relationship]. "
+                    f"3) Next Action: [Choose ONE: MOVE_FORWARD, MOVE_BACKWARD, MOVE_LEFT, MOVE_RIGHT, MOVE_UP, MOVE_DOWN, ROTATE_CW, ROTATE_CCW, ALIGN_TARGET, INSERT, STOP]. "
+                    f"4) Confidence: [HIGH/MEDIUM/LOW]."
                 )
         else:
             self.instruction = instruction
@@ -832,6 +842,9 @@ def create_unified_dataloader(
     """
     datasets = []
     dataset_weights = []
+    track_weights = (not distributed) and shuffle and (old_weight != new_weight)
+    old_sample_count = 0
+    new_sample_count = 0
 
     # Load old format datasets
     if old_dataset_patterns:
@@ -851,7 +864,9 @@ def create_unified_dataloader(
                         use_cache=use_cache,
                     )
                     datasets.append(ds)
-                    dataset_weights.extend([old_weight] * len(ds))
+                    old_sample_count += len(ds)
+                    if track_weights:
+                        dataset_weights.extend([old_weight] * len(ds))
                 except Exception as e:
                     print(f"⚠️ Failed to load old dataset {traj_dir}: {e}")
 
@@ -882,7 +897,9 @@ def create_unified_dataloader(
                             use_cache=use_cache,
                         )
                         datasets.append(ds)
-                        dataset_weights.extend([new_weight] * len(ds))
+                        new_sample_count += len(ds)
+                        if track_weights:
+                            dataset_weights.extend([new_weight] * len(ds))
                     except Exception as e:
                         print(f"⚠️ Failed to load new dataset {episode_dir}: {e}")
         else:
@@ -895,14 +912,14 @@ def create_unified_dataloader(
 
     print(f"\n📊 Total dataset statistics:")
     print(f"   Total samples: {len(full_dataset)}")
-    print(f"   Old dataset samples: {sum(1 for w in dataset_weights if w == old_weight)}")
-    print(f"   New dataset samples: {sum(1 for w in dataset_weights if w == new_weight)}")
+    print(f"   Old dataset samples: {old_sample_count}")
+    print(f"   New dataset samples: {new_sample_count}")
     print(f"   Sampling ratio (new:old): {new_weight}:{old_weight}")
 
     if return_dataset:
         # Add a num_old_samples and num_new_samples attribute to the dataset for logging
-        full_dataset.num_old_samples = sum(1 for w in dataset_weights if w == old_weight)
-        full_dataset.num_new_samples = sum(1 for w in dataset_weights if w == new_weight)
+        full_dataset.num_old_samples = old_sample_count
+        full_dataset.num_new_samples = new_sample_count
         return full_dataset
 
     # Create sampler
@@ -915,7 +932,7 @@ def create_unified_dataloader(
             shuffle=shuffle
         )
         shuffle = False
-    elif shuffle and old_weight != new_weight:
+    elif track_weights:
         sampler = WeightedRandomSampler(
             weights=dataset_weights,
             num_samples=len(dataset_weights),

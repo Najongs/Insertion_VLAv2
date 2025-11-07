@@ -170,17 +170,43 @@ def build_trapezoid_scheduler(
 # ===========================================================
 # 초기화
 # ===========================================================
-def setup_distributed():
-    if not dist.is_initialized():
-        dist.init_process_group(backend="nccl", init_method="env://")
+def _distributed_ready():
+    return dist.is_available() and dist.is_initialized()
+
+
+def _get_rank():
+    return dist.get_rank() if _distributed_ready() else 0
+
+
+def setup_distributed(disable_ddp: bool = False):
+    """
+    Initialize distributed training if allowed. Some sandboxed environments block socket
+    creation, so we optionally fall back to single-process mode for debugging.
+    """
+    if disable_ddp:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device.type == "cuda":
+            torch.cuda.set_device(0)
+            device = torch.device("cuda:0")
+        print("[SingleProcess] using device", device)
+        return 0, 1, 0, device
+
+    if not _distributed_ready():
+        try:
+            dist.init_process_group(backend="nccl", init_method="env://")
+        except Exception as exc:
+            print(f"⚠️ DDP init failed ({exc}); falling back to single-process mode.")
+            return setup_distributed(disable_ddp=True)
 
     rank = dist.get_rank()
     world_size = dist.get_world_size()
 
-    # torchrun에서 LOCAL_RANK는 프로세스별 GPU ID임
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
-    device = torch.device(f"cuda:{local_rank}")
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
+        device = torch.device(f"cuda:{local_rank}")
+    else:
+        device = torch.device("cpu")
 
     print(f"[Rank {rank}] using device {device}")
     return rank, world_size, local_rank, device
@@ -188,7 +214,7 @@ def setup_distributed():
 # ============================================================
 # Unified Dataloader Builder
 # ============================================================
-def build_dataloaders(args, rank, world_size, use_cache=True):
+def build_dataloaders(args, rank, world_size, use_cache=True, distributed=True):
     """
     Build unified dataloaders combining:
       ① Old format datasets
@@ -221,9 +247,9 @@ def build_dataloaders(args, rank, world_size, use_cache=True):
         vlm_reuse_count=args.vlm_reuse_count if hasattr(args, "vlm_reuse_count") else 3,
         sensor_window_size=args.sensor_window_size if hasattr(args, "sensor_window_size") else 65,
         action_expert_hz=args.action_expert_hz if hasattr(args, "action_expert_hz") else 10,
-        distributed=True,
-        rank=rank,
-        world_size=world_size,
+        distributed=distributed,
+        rank=rank if distributed else 0,
+        world_size=world_size if distributed else 1,
         use_cache=use_cache,  # Pass the flag here
     )
 
@@ -253,7 +279,9 @@ def build_dataloaders(args, rank, world_size, use_cache=True):
         val_datasets = [next(iter(train_loader.dataset.datasets))]
 
     val_dataset = ConcatDataset(val_datasets)
-    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False)
+    val_sampler = None
+    if distributed:
+        val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False)
 
     val_loader = DataLoader(
         val_dataset,
@@ -292,7 +320,7 @@ def Train_Regression(
     sensor_loss_weight=2.0,
 ):
     """Regression training loop - OPTIMIZED"""
-    rank = dist.get_rank()
+    rank = _get_rank()
     writer = AsyncCheckpointWriter(max_queue=2, sync_every=0) if rank == 0 else None
 
     model.train()
@@ -373,6 +401,7 @@ def Train_Regression(
                         cache_keys=batch["cache_keys"],
                         sensor_data=sensor_data if sensor_enabled else None,
                         robot_states=robot_states,
+                        vl_cache_tokens=batch.get("vl_cache"),
                     )
 
                     weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
@@ -451,9 +480,12 @@ def Train_Regression(
                     optimizer.zero_grad(set_to_none=True)
                 continue
 
-        avg_loss_tensor = torch.tensor(total_loss / len(data_loader), device=device)
-        dist.all_reduce(avg_loss_tensor, op=dist.ReduceOp.AVG)
-        avg_loss = avg_loss_tensor.item()
+        if _distributed_ready():
+            avg_loss_tensor = torch.tensor(total_loss / len(data_loader), device=device)
+            dist.all_reduce(avg_loss_tensor, op=dist.ReduceOp.AVG)
+            avg_loss = avg_loss_tensor.item()
+        else:
+            avg_loss = total_loss / max(1, len(data_loader))
 
         if scheduler is not None and sched_on == "epoch":
             scheduler.step()
@@ -485,6 +517,7 @@ def Train_Regression(
                             cache_keys=batch["cache_keys"],
                             sensor_data=sensor_data if sensor_enabled else None,
                             robot_states=robot_states,
+                            vl_cache_tokens=batch.get("vl_cache"),
                         )
 
                         weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
@@ -751,12 +784,14 @@ def main():
     parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
     parser.add_argument('--use_cache', action='store_true', help='Enable VL feature caching')
     parser.add_argument('--finetune_vl', type=str, default='none', choices=['none', 'lora', 'full'], help='Fine-tuning mode for VL model')
+    parser.add_argument('--disable_ddp', action='store_true', help='Run in single-process (no DDP). Useful for debugging.')
 
     args = parser.parse_args()
 
     # Setup distributed
-    rank, world_size, local_rank, device = setup_distributed()
-    torch.cuda.set_device(device)
+    rank, world_size, local_rank, device = setup_distributed(disable_ddp=args.disable_ddp)
+    if device.type == "cuda":
+        torch.cuda.set_device(device)
 
     if rank == 0:
         print(f"🚀 Regression VLA Training")
@@ -769,7 +804,90 @@ def main():
 
     # Cache build mode
     if args.mode == 'cache':
-        # ... (cache building logic remains the same)
+        if rank == 0:
+            print("📦 Building dataset for cache generation...")
+        full_dataset, _ = build_datasets(args, rank)
+
+        if rank == 0:
+            print("⏳ Initializing VL model for cache building...")
+
+        processor = AutoProcessor.from_pretrained(vl_model_name)
+        target_pixels = args.image_resize_height * args.image_resize_width
+        processor.image_processor.min_pixels = target_pixels
+        processor.image_processor.max_pixels = target_pixels
+
+        cache_device_map = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype_candidates = [torch.bfloat16, torch.float16] if cache_device_map == "cuda" else [torch.float32]
+        attn_impls = ["flash_attention_2", "sdpa"] if cache_device_map == "cuda" else ["sdpa"]
+        vl_model = None
+        last_error = None
+
+        for dtype in dtype_candidates:
+            for impl in attn_impls:
+                try:
+                    print(f"🧠 [Cache] Trying attn={impl}, dtype={dtype}, device={cache_device_map}...")
+                    vl_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                        vl_model_name,
+                        torch_dtype=dtype,
+                        attn_implementation=impl,
+                        device_map=cache_device_map,
+                        low_cpu_mem_usage=True,
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    print(f"⚠️ [Cache] {impl} ({dtype}) failed: {exc}")
+            if vl_model is not None:
+                break
+
+        if vl_model is None:
+            for dtype in dtype_candidates:
+                try:
+                    print(f"🧠 [Cache] Trying default attention, dtype={dtype}, device={cache_device_map}...")
+                    vl_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                        vl_model_name,
+                        torch_dtype=dtype,
+                        device_map=cache_device_map,
+                        low_cpu_mem_usage=True,
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    print(f"⚠️ [Cache] default ({dtype}) failed: {exc}")
+
+        if vl_model is None:
+            raise RuntimeError(f"❌ Cache build aborted: cannot load VL model ({last_error})")
+
+        class DummyVLA:
+            """Minimal wrapper exposing vl_model/processor for cache builder."""
+            def __init__(self, vl_model, processor, cache_dir: Path):
+                self.vl_model = vl_model
+                self.processor = processor
+                self.cache_dir = cache_dir
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                self._cache_path = QwenVLAUnified._cache_path.__get__(self)
+                self._enforce_cache_limit = QwenVLAUnified._enforce_cache_limit.__get__(self)
+                self._atomic_save = QwenVLAUnified._atomic_save
+            def eval(self):
+                self.vl_model.eval()
+                return self
+
+        dummy_model = DummyVLA(vl_model, processor, cache_dir)
+        build_vl_cache_distributed_optimized(
+            dummy_model,
+            full_dataset,
+            device=device,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            prefetch_factor=4 if args.num_workers > 0 else None,
+        )
+
+        if _distributed_ready():
+            dist.barrier()
+        if rank == 0:
+            print("✅ Cache build complete. You can now run training with --mode train.")
+        if _distributed_ready():
+            dist.destroy_process_group()
         return
 
     # Training mode
@@ -779,7 +897,13 @@ def main():
         if not cache_dir.exists() or not any(cache_dir.iterdir()):
             print(f"   [경고!] 캐시 디렉토리가 비어있거나 존재하지 않습니다!")
 
-    train_loader, val_loader = build_dataloaders(args, rank, world_size, use_cache=args.use_cache)
+    train_loader, val_loader = build_dataloaders(
+        args,
+        rank,
+        world_size,
+        use_cache=args.use_cache,
+        distributed=not args.disable_ddp,
+    )
 
     if rank == 0: print("⏳ Initializing model for training...")
 
@@ -817,14 +941,20 @@ def main():
             print("✅ RobotStateEncoder weights loaded.")
 
     # DDP
-    model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+    if not args.disable_ddp and _distributed_ready():
+        model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+    else:
+        if rank == 0:
+            print("🧪 Running without DDP (single process mode).")
+
+    model_base = model.module if hasattr(model, "module") else model
 
     # Freeze encoders after DDP wrapping and weight loading
     if args.freeze_encoders:
         if rank == 0: print("🧊 Freezing Sensor and Robot State Encoders...")
-        for param in model.module.sensor_encoder.parameters():
+        for param in model_base.sensor_encoder.parameters():
             param.requires_grad = False
-        for param in model.module.robot_state_encoder.parameters():
+        for param in model_base.robot_state_encoder.parameters():
             param.requires_grad = False
         if rank == 0: print("✅ Encoders frozen.")
 
@@ -846,7 +976,7 @@ def main():
     if args.resume:
         if rank == 0: print(f"Resuming from {args.resume}")
         ckpt = copy_to_local_then_load(Path(args.resume), map_location=device)
-        model.module.load_state_dict(ckpt["model_state_dict"], strict=False)
+        model_base.load_state_dict(ckpt["model_state_dict"], strict=False)
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         if scheduler and ckpt.get("scheduler_state_dict"):
             scheduler.load_state_dict(ckpt["scheduler_state_dict"])
@@ -860,7 +990,8 @@ def main():
         sensor_loss_weight=args.sensor_loss_weight,
     )
 
-    dist.destroy_process_group()
+    if _distributed_ready():
+        dist.destroy_process_group()
 
 if __name__ == "__main__":
     main()

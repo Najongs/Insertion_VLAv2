@@ -1216,6 +1216,43 @@ class QwenVLAUnified(nn.Module):
         h = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
         return self.cache_dir / f"{h}.pt"
 
+    def _prepare_cached_vl_tokens(self, cached_batch, device: torch.device):
+        """
+        Convert dataloader-provided VL cache tensors (list or tensor) into a single batch tensor.
+        Returns None if any item is missing so the caller can fall back to live encoding.
+        """
+        if cached_batch is None:
+            return None
+
+        if isinstance(cached_batch, torch.Tensor):
+            tensors = [cached_batch]
+        elif isinstance(cached_batch, (list, tuple)):
+            tensors = []
+            for item in cached_batch:
+                if item is None:
+                    return None
+                if not isinstance(item, torch.Tensor):
+                    return None
+                tensors.append(item)
+        else:
+            return None
+
+        if not tensors:
+            return None
+
+        target_dtype = getattr(self, "model_dtype", torch.bfloat16)
+        prepared = []
+        for tensor in tensors:
+            t = tensor
+            if t.ndim == 1:
+                t = t.view(1, 1, -1)
+            elif t.ndim == 2:
+                t = t.unsqueeze(0)
+            prepared.append(t.to(dtype=target_dtype))
+
+        batch_tensor = torch.cat(prepared, dim=0)
+        return batch_tensor.to(device=device, non_blocking=True)
+
     @staticmethod
     def _atomic_save(tensor_cpu: torch.Tensor, path: Path):
         tmp = path.with_suffix(".pt.tmp")
@@ -1272,7 +1309,8 @@ class QwenVLAUnified(nn.Module):
                 sensor_data=None,
                 robot_states=None,  # NEW: Robot state data (joint + pose)
                 cache_keys=None,
-                cache: bool = True):
+                cache: bool = True,
+                vl_cache_tokens=None):
         """
         Forward pass for both diffusion and regression
 
@@ -1292,13 +1330,20 @@ class QwenVLAUnified(nn.Module):
             Regression: pred_actions, delta
         """
         device = next(self.parameters()).device
-        use_cache = bool(cache and self.cache_enabled)
 
-        if cache_keys is None:
-            cache_keys = [f"idx={i}" for i in range(len(text_inputs))]
+        # Try to leverage dataloader-provided VL cache tensors first
+        vl_tokens = self._prepare_cached_vl_tokens(vl_cache_tokens, device)
+        if vl_tokens is not None and not hasattr(self, "_external_cache_confirmed"):
+            print("💾 Using dataloader-provided VL cache tensors.")
+            self._external_cache_confirmed = True
 
-        # Encode VL features
-        vl_tokens = self._encode_vision_features(text_inputs, image_inputs, cache_keys, use_cache, device)
+        if vl_tokens is None:
+            use_cache = bool(cache and self.cache_enabled)
+            if cache_keys is None:
+                cache_keys = [f"idx={i}" for i in range(len(text_inputs))]
+
+            # Encode VL features (live path)
+            vl_tokens = self._encode_vision_features(text_inputs, image_inputs, cache_keys, use_cache, device)
 
         # Encode sensor features
         sensor_features = None

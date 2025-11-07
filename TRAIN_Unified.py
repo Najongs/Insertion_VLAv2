@@ -421,6 +421,7 @@ def Train_Diffusion(
                     actions=gt_actions,
                     cache_keys=batch["cache_keys"],
                     sensor_data=sensor_data if sensor_enabled else None,
+                    vl_cache_tokens=batch.get("vl_cache"),
                 )
 
             # loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
@@ -552,6 +553,7 @@ def validate_diffusion(model, val_loader, device, sensor_enabled, sensor_loss_we
                     actions=gt_actions,
                     cache_keys=batch["cache_keys"],
                     sensor_data=sensor_data,
+                    vl_cache_tokens=batch.get("vl_cache"),
                 )
 
                 # loss_per_sample = loss_fn(eps_pred, eps_target).mean(dim=[1, 2])
@@ -708,6 +710,7 @@ def Train_Regression(
                             cache_keys=batch["cache_keys"],
                             sensor_data=sensor_data if sensor_enabled else None,
                             robot_states=robot_states,
+                            vl_cache_tokens=batch.get("vl_cache"),
                         )
 
                         # ✅ Count sensor samples for logging
@@ -725,6 +728,7 @@ def Train_Regression(
                             cache_keys=batch["cache_keys"],
                             sensor_data=sensor_data if sensor_enabled else None,
                             robot_states=robot_states,
+                            vl_cache_tokens=batch.get("vl_cache"),
                         )
 
                         # ✅ confidence도 GPU에서 바로 weight tensor 생성
@@ -854,6 +858,7 @@ def Train_Regression(
                                 cache_keys=batch["cache_keys"],
                                 sensor_data=sensor_data if sensor_enabled else None,
                                 robot_states=robot_states,
+                                vl_cache_tokens=batch.get("vl_cache"),
                             )
                             if loss.ndim > 0:
                                 loss = loss.mean()
@@ -866,6 +871,7 @@ def Train_Regression(
                                 cache_keys=batch["cache_keys"],
                                 sensor_data=sensor_data if sensor_enabled else None,
                                 robot_states=robot_states,
+                                vl_cache_tokens=batch.get("vl_cache"),
                             )
 
                             weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)

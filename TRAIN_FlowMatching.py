@@ -367,6 +367,7 @@ def Train_FlowMatching(
                         cache_keys=batch["cache_keys"],
                         sensor_data=sensor_data if sensor_enabled else None,
                         robot_states=robot_states,
+                        vl_cache_tokens=batch.get("vl_cache"),
                     )
 
                     # ✅ Count sensor samples for logging
@@ -456,6 +457,7 @@ def Train_FlowMatching(
                             cache_keys=batch["cache_keys"],
                             sensor_data=sensor_data if sensor_enabled else None,
                             robot_states=robot_states,
+                            vl_cache_tokens=batch.get("vl_cache"),
                         )
                         if loss.ndim > 0:
                             loss = loss.mean()
