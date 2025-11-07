@@ -20,6 +20,7 @@ hf_upload_temp/
 downloaded_models/
 *.pt.lock
 
+data_collection_*/
 # Distribution / packaging
 .Python
 build/
