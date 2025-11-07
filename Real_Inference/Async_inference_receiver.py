@@ -460,6 +460,21 @@ class RobotStateCircularBuffer:
         with self.lock:
             return len(self.buffer)
 
+    def get_latest_timestamp(self) -> float:
+        """Get timestamp of most recent data in buffer"""
+        with self.lock:
+            if len(self.buffer) == 0:
+                return 0.0
+            return self.buffer[-1][1]  # Last element's timestamp
+
+    def is_fresh(self, max_age_sec: float = 1.0) -> bool:
+        """Check if buffer data is fresh (not stale)"""
+        latest_ts = self.get_latest_timestamp()
+        if latest_ts == 0.0:
+            return False
+        age = time.time() - latest_ts
+        return age <= max_age_sec
+
 
 # ==============================
 # Sensor Data Circular Buffer (OPTIMIZED for 65 samples)
@@ -484,7 +499,8 @@ class SensorCircularBuffer:
                 force = np.array([sample['force']], dtype=np.float32)
                 aline = sample['aline'].astype(np.float32)
                 combined = np.concatenate([force, aline])  # (1026,)
-                self.buffer.append(combined)
+                # Store with timestamp for freshness check
+                self.buffer.append((combined, sample['timestamp']))
 
                 # Save to permanent buffer if enabled
                 if self.save_buffer is not None:
@@ -502,7 +518,9 @@ class SensorCircularBuffer:
                 # Return zeros if no data yet
                 return torch.zeros(self.max_length, self.channels, dtype=torch.float32)
 
-            data = np.array(list(self.buffer), dtype=np.float32)  # (current_len, C)
+            # Extract sensor data (ignore timestamps)
+            samples = [sample for sample, _ in self.buffer]
+            data = np.array(samples, dtype=np.float32)  # (current_len, C)
 
             # Pad to max_length if needed
             if len(data) < self.max_length:
@@ -520,6 +538,21 @@ class SensorCircularBuffer:
     def size(self) -> int:
         with self.lock:
             return len(self.buffer)
+
+    def get_latest_timestamp(self) -> float:
+        """Get timestamp of most recent data in buffer"""
+        with self.lock:
+            if len(self.buffer) == 0:
+                return 0.0
+            return self.buffer[-1][1]  # Last element's timestamp
+
+    def is_fresh(self, max_age_sec: float = 1.0) -> bool:
+        """Check if buffer data is fresh (not stale)"""
+        latest_ts = self.get_latest_timestamp()
+        if latest_ts == 0.0:
+            return False
+        age = time.time() - latest_ts
+        return age <= max_age_sec
 
 
 # ==============================
@@ -831,6 +864,7 @@ class SensorUDPReceiver(threading.Thread):
         self.clock_offset = None
         self.calibration_samples = []
         self.packet_count = 0
+        self.last_recv_time = 0  # Track last successful receive time
 
     def run(self):
         import socket
@@ -905,6 +939,7 @@ class SensorUDPReceiver(threading.Thread):
                 # Add to circular buffer
                 self.sensor_buffer.add_samples(records)
                 self.packet_count += num_packets
+                self.last_recv_time = recv_time
 
             except Exception as e:
                 print(f"[ERROR] Sensor UDP unpack failed: {e}")
@@ -1107,6 +1142,11 @@ def main():
     cam_recv_count = defaultdict(int)
     inference_results = []
 
+    # Data freshness tracking
+    last_robot_recv_time = 0
+    last_sensor_recv_time = 0
+    last_camera_recv_time = 0
+
     # Async VL update tracking
     vl_update_counter = 0
     last_vl_update_time = 0
@@ -1202,6 +1242,7 @@ def main():
                         if view_name:
                             image_buffer.update(view_name, img, timestamp, cam_name)
                             cam_recv_count[view_name] += 1
+                            last_camera_recv_time = now
 
                     except zmq.Again:
                         break
@@ -1239,6 +1280,7 @@ def main():
 
                         # Add to robot state buffer for model input
                         robot_state_buffer.add_state(joints, pose, origin_ts)
+                        last_robot_recv_time = now
 
                         # Save robot data if enabled
                         if args.save_data:
@@ -1279,11 +1321,14 @@ def main():
             time_since_last_action = now - last_action_time
 
             if time_since_last_action >= action_period:
-                # Check if all data sources are ready
+                # Check if all data sources are ready AND fresh (not stale)
+                sensor_fresh = sensor_buffer.is_fresh(max_age_sec=1.0)
+                robot_fresh = robot_state_buffer.is_fresh(max_age_sec=1.0)
+
                 data_ready = (
                     inference_engine.vl_features is not None and
-                    sensor_buffer.is_ready() and
-                    robot_state_buffer.is_ready()
+                    sensor_buffer.is_ready() and sensor_fresh and
+                    robot_state_buffer.is_ready() and robot_fresh
                 )
 
                 if data_ready:
@@ -1325,9 +1370,7 @@ def main():
                     if result:
                         vl_update_counter += 1
 
-                        # Log action prediction
-                        if not args.verbose:
-                            print(f"[INFER] Action #{len(inference_results)+1} | VL_reuse={vl_update_counter}/{config.VLM_REUSE_COUNT} | Time: {result['inference_time']*1000:.1f}ms")
+                        # Log action prediction (moved below to show action values)
 
                         # Save result
                         inference_results.append({
@@ -1346,22 +1389,30 @@ def main():
                         # === SEND ACTION TO ROBOT CONTROLLER ===
                         # Use the first action from the horizon
                         action_to_send = result['actions'][0]
-                        
+
                         # The model outputs 7D action (6-DoF + gripper)
                         # We send the 6-DoF delta pose to the robot receiver
                         delta_pose = action_to_send[:6].tolist()
+                        gripper = action_to_send[6]
 
                         # Format the command
                         robot_cmd = {
                             "cmd": "dpose",
                             "dp": delta_pose
                         }
-                        
+
+                        # Display action being sent
+                        if not args.verbose:
+                            print(f"[INFER] Action #{len(inference_results)} | VL_reuse={vl_update_counter}/{config.VLM_REUSE_COUNT} | Time: {result['inference_time']*1000:.1f}ms")
+                            print(f"[ACTION] dpose: [x:{delta_pose[0]:+.4f}, y:{delta_pose[1]:+.4f}, z:{delta_pose[2]:+.4f}, a:{delta_pose[3]:+.4f}, b:{delta_pose[4]:+.4f}, r:{delta_pose[5]:+.4f}] | gripper:{gripper:.3f}")
+                        else:
+                            print(f"[ACTION] 7D Action: [x:{delta_pose[0]:+.4f}, y:{delta_pose[1]:+.4f}, z:{delta_pose[2]:+.4f}, a:{delta_pose[3]:+.4f}, b:{delta_pose[4]:+.4f}, r:{delta_pose[5]:+.4f}, grip:{gripper:.3f}]")
+
                         try:
                             cmd_sock.send_json(robot_cmd, zmq.DONTWAIT)
                             action_send_success += 1
                             if args.verbose:
-                                print(f"[ACTION] ✅ Sent dpose: [{delta_pose[0]:.4f}, {delta_pose[1]:.4f}, {delta_pose[2]:.4f}, {delta_pose[3]:.4f}, {delta_pose[4]:.4f}, {delta_pose[5]:.4f}]")
+                                print(f"[ACTION] ✅ Command sent successfully")
                         except zmq.Again:
                             action_send_failed += 1
                             print(f"⚠️ [ACTION] Robot command socket busy, command dropped. (Failed: {action_send_failed})")
@@ -1372,12 +1423,16 @@ def main():
                     last_action_time = now
 
                 else:
-                    # Data not ready
+                    # Data not ready - show why
                     if time_since_last_action >= 2.0:  # Print warning every 2s
-                        print(f"[WAIT] VL Features: {inference_engine.vl_features is not None} | "
-                              f"Images: {image_buffer.is_ready()} ({len(image_buffer.latest_images)}/5) | "
-                              f"Sensor: {sensor_buffer.is_ready()} ({sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}) | "
-                              f"Robot: {robot_state_buffer.is_ready()} ({robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH})")
+                        sensor_age = time.time() - sensor_buffer.get_latest_timestamp() if sensor_buffer.get_latest_timestamp() > 0 else 999
+                        robot_age = time.time() - robot_state_buffer.get_latest_timestamp() if robot_state_buffer.get_latest_timestamp() > 0 else 999
+
+                        print(f"[WAIT] Waiting for fresh data:")
+                        print(f"  VL Features: {inference_engine.vl_features is not None}")
+                        print(f"  Images: {image_buffer.is_ready()} ({len(image_buffer.latest_images)}/5)")
+                        print(f"  Sensor: ready={sensor_buffer.is_ready()}, fresh={sensor_fresh} ({sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}, age={sensor_age:.1f}s)")
+                        print(f"  Robot: ready={robot_state_buffer.is_ready()}, fresh={robot_fresh} ({robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH}, age={robot_age:.1f}s)")
                         last_action_time = now
 
             # Status print
@@ -1388,9 +1443,19 @@ def main():
                 print(f"VL Updates: {stats['vl_update_count']} | VL avg: {stats['vl_avg_time_ms']:.0f}ms")
                 print(f"Actions: {stats['action_count']} | Action avg: {stats['action_avg_time_ms']:.1f}ms")
                 print(f"Actions Sent: {action_send_success} | Failed: {action_send_failed} | Success Rate: {100*action_send_success/(action_send_success+action_send_failed) if (action_send_success+action_send_failed)>0 else 0:.1f}%")
-                print(f"Images recv: {', '.join([f'{v}:{cam_recv_count[v]}' for v in sorted(cam_recv_count.keys())])}")
-                print(f"Sensor buffer: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
-                print(f"Robot buffer: {robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH}")
+
+                # Data freshness check
+                camera_stale = (now - last_camera_recv_time) > 1.0 if last_camera_recv_time > 0 else True
+                sensor_stale = (now - sensor_thread.last_recv_time) > 1.0 if sensor_thread.last_recv_time > 0 else True
+                robot_stale = (now - last_robot_recv_time) > 1.0 if last_robot_recv_time > 0 else True
+
+                camera_age = f"{now - last_camera_recv_time:.1f}s ago" if last_camera_recv_time > 0 else "never"
+                sensor_age = f"{now - sensor_thread.last_recv_time:.1f}s ago" if sensor_thread.last_recv_time > 0 else "never"
+                robot_age = f"{now - last_robot_recv_time:.1f}s ago" if last_robot_recv_time > 0 else "never"
+
+                print(f"Images recv: {', '.join([f'{v}:{cam_recv_count[v]}' for v in sorted(cam_recv_count.keys())])} {'⚠️ STALE' if camera_stale else '✅'} (last: {camera_age})")
+                print(f"Sensor buffer: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH} {'⚠️ STALE' if sensor_stale else '✅'} (last: {sensor_age})")
+                print(f"Robot buffer: {robot_state_buffer.size()}/{config.ROBOT_STATE_BUFFER_LENGTH} {'⚠️ STALE' if robot_stale else '✅'} (last: {robot_age})")
 
                 if robot_state:
                     print(f"Robot: J1={robot_state['joints'][0]:.2f}°, Px={robot_state['pose'][0]:.2f}mm")
