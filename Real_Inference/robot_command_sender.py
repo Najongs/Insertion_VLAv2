@@ -4,7 +4,7 @@ import socket, json, time, math
 RX_HOST, RX_PORT = "127.0.0.1", 5000
 
 start_joints = [0.0, 0.0, 0.0, 0.0, 0.0, 30.0]  # J6 기준각
-conf = {"cs": 1, "ce": 1, "cw": 1, "ct": 0}
+conf = {"cs": 1, "ce": 1, "cw": -1, "ct": 0}
 
 # 시작/끝 포즈 (deg는 a,b,g = Rx,Ry,Rz)
 start_pose = [190.0, 0.0, 308.0, 0.0, 90.0, 0.0]

@@ -21,7 +21,7 @@ STATE_PUB_RATE_HZ = 100
 PAYLOAD_FORMAT = '<ddf12f'
 
 # === 로봇 시작 위치 ===
-HOME_JOINTS = [190, 0, 308, 0, 90, 0] # 안전한 시작을 위한 기본 홈 포지션 (관절 각도)
+HOME_JOINTS = [190, 1, 308, 0, 90, 0] # 안전한 시작을 위한 기본 홈 포지션 (관절 각도)
 # === 주기/워치독 ===
 CTRL_HZ   = 10.0
 CTRL_DT   = 1.0 / CTRL_HZ
@@ -282,6 +282,7 @@ def robot_init():
     print("[ROBOT] ->", send_and_get(robot_sock, "SetEom(1)", 1.0))
     print("[ROBOT] ->", send_and_get(robot_sock, "SetAutoConf(1)", 1.0))
     print("[ROBOT] ->", send_and_get(robot_sock, "SetAutoConfTurn(1)", 1.0))
+    print("[ROBOT] ->", send_and_get(robot_sock, "SetConf(1, 1, -1)", 1.0))
     print("[ROBOT] ->", send_and_get(robot_sock, f"SetVelTimeout({VEL_TIMEOUT})", 1.0))
 
     print("✅ [ROBOT] Robot ready: homed & no error")
@@ -471,12 +472,12 @@ def main():
             if cmd == "start":
                 if "start_joints" in msg:
                     j = msg["start_joints"]
-                    print(f"[CMD] Executing start with MoveJoints: {j}")
+                    print(f"[CMD] Executing start with MovePose: {j}")
                     with _robot_sock_lock:
-                        send_cmd(robot_sock, f"MoveJoints({j[0]},{j[1]},{j[2]},{j[3]},{j[4]},{j[5]})")
+                        send_cmd(robot_sock, f"MovePose({j[0]},{j[1]},{j[2]},{j[3]},{j[4]},{j[5]})")
                         _ = try_recv_line(robot_sock, timeout=0.1) # Consume response
                     ok = wait_until(lambda s: s["sm"] == 0 and s["eom"] == 1 and s["es"] == 0, 120, label="start joints")
-                    print(f"[ROBOT] MoveJoints idle: {ok}")
+                    print(f"[ROBOT] MovePose idle: {ok}")
                 elif "start_pose" in msg:
                     x, y, z, a, b, g = msg["start_pose"]
                     print(f"[CMD] Executing start with MovePose(abs): {msg['start_pose']}")
