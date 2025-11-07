@@ -40,7 +40,7 @@ DEFAULT_SERVER_IP = "10.130.4.79"
 DEFAULT_SERVER_PORT = 5555
 
 # 🔥 OPTIMIZED: 5Hz 설정 (VLM @ 2.6Hz보다 약간 빠르게)
-DEFAULT_CAPTURE_FPS = 5  # 5 frames per second
+DEFAULT_CAPTURE_FPS = 4  # 5 frames per second
 CAPTURE_INTERVAL = 1.0 / DEFAULT_CAPTURE_FPS  # 0.2초 간격
 PULSE_WIDTH = 0.01  # 10ms 펄스
 
