@@ -268,7 +268,7 @@ class Config:
     ZMQ_ROBOT_PUB_ADDRESS = "10.130.41.111"
     ZMQ_ROBOT_PUB_PORT = 5556
     ZMQ_ROBOT_TOPIC = b"robot_state"
-    ZMQ_CMD_PUSH_ADDRESS = "127.0.0.1"  # Assuming robot_command_receiver is on the same machine
+    ZMQ_CMD_PUSH_ADDRESS = None  # Set from --robot-ip at runtime
     ZMQ_CMD_PUSH_PORT = 5000           # The port robot_command_receiver listens on
     SENSOR_UDP_PORT = 9999
     SENSOR_UDP_IP = "0.0.0.0"
@@ -997,6 +997,7 @@ def main():
 
     config = Config()
     config.ZMQ_ROBOT_PUB_ADDRESS = args.robot_ip  # Set robot IP from args
+    config.ZMQ_CMD_PUSH_ADDRESS = args.robot_ip   # Also use for command push
     config.VLM_REUSE_COUNT = args.vl_reuse
     config.MODEL_TYPE = args.model_type
     config.FLOW_STEPS = args.flow_steps
