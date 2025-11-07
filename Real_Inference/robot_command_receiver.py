@@ -21,8 +21,7 @@ STATE_PUB_RATE_HZ = 100
 PAYLOAD_FORMAT = '<ddf12f'
 
 # === 로봇 시작 위치 ===
-HOME_JOINTS = [0, 0, 0, 0, 0, 0] # 안전한 시작을 위한 기본 홈 포지션 (관절 각도)
-
+HOME_JOINTS = [190, 0, 308, 0, 90, 0] # 안전한 시작을 위한 기본 홈 포지션 (관절 각도)
 # === 주기/워치독 ===
 CTRL_HZ   = 10.0
 CTRL_DT   = 1.0 / CTRL_HZ
@@ -428,7 +427,7 @@ def main():
     # --- Go to a defined home position first ---
     print(f"[CMD] Moving to home position: {HOME_JOINTS}")
     with _robot_sock_lock:
-        send_cmd(robot_sock, f"MoveJoints({HOME_JOINTS[0]},{HOME_JOINTS[1]},{HOME_JOINTS[2]},{HOME_JOINTS[3]},{HOME_JOINTS[4]},{HOME_JOINTS[5]})")
+        send_cmd(robot_sock, f"MovePose({HOME_JOINTS[0]},{HOME_JOINTS[1]},{HOME_JOINTS[2]},{HOME_JOINTS[3]},{HOME_JOINTS[4]},{HOME_JOINTS[5]})")
         _ = try_recv_line(robot_sock, timeout=0.1) # Consume response
     wait_until(lambda s: s["sm"] == 0 and s["eom"] == 1 and s["es"] == 0, 120, label="go home")
     print("[ROBOT] Reached home position.")
