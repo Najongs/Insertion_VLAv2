@@ -1,0 +1,619 @@
+{
+    "episode_20251030_025813": {
+        "1761760709.221024": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760709.221024"
+    },
+    "episode_20251030_025119": {
+        "1761760300.220863": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760300.220863"
+    },
+    "episode_20251030_025605": {
+        "1761760581.020993": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760581.020993"
+    },
+    "episode_20251030_025209": {
+        "1761760347.420968": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760347.420968"
+    },
+    "episode_20251030_025728": {
+        "1761760664.422140": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760664.422140"
+    },
+    "episode_20251030_025421": {
+        "1761760477.221774": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760477.221774"
+    },
+    "episode_20251030_025340": {
+        "1761760435.620971": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760435.620971"
+    },
+    "episode_20251030_025510": {
+        "1761760525.820946": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760525.820946"
+    },
+    "episode_20251030_030137": {
+        "1761760912.422748": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760912.422748"
+    },
+    "episode_20251030_025856": {
+        "1761760755.021199": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760755.021199"
+    },
+    "episode_20251030_030038": {
+        "1761760853.021014": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760853.021014"
+    },
+    "episode_20251030_025952": {
+        "1761760806.821110": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760806.821110"
+    },
+    "episode_20251030_025252": {
+        "1761760387.826899": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760387.826899"
+    },
+    "episode_20251030_030506": {
+        "1761761122.821131": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761122.821131"
+    },
+    "episode_20251030_031054": {
+        "1761761468.821116": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761468.821116"
+    },
+    "episode_20251030_031358": {
+        "1761761653.621339": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761653.621339"
+    },
+    "episode_20251030_031135": {
+        "1761761510.421248": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761510.421248"
+    },
+    "episode_20251030_030543": {
+        "1761761159.422110": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761159.422110"
+    },
+    "episode_20251030_030714": {
+        "1761761250.021581": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761250.021581"
+    },
+    "episode_20251030_031225": {
+        "1761761560.821310": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761560.821310"
+    },
+    "episode_20251030_030316": {
+        "1761761011.626287": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761011.626287"
+    },
+    "episode_20251030_030431": {
+        "1761761085.825268": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761085.825268"
+    },
+    "episode_20251030_031315": {
+        "1761761610.223485": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761610.223485"
+    },
+    "episode_20251030_030925": {
+        "1761761380.421325": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761380.421325"
+    },
+    "episode_20251030_030630": {
+        "1761761205.821131": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761205.821131"
+    },
+    "episode_20251030_030844": {
+        "1761761339.821357": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761339.821357"
+    },
+    "episode_20251030_030759": {
+        "1761761294.022138": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761294.022138"
+    },
+    "episode_20251030_031009": {
+        "1761761424.621155": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761424.621155"
+    },
+    "episode_20251030_033214": {
+        "1761762749.024488": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762749.024488"
+    },
+    "episode_20251030_033531": {
+        "1761762946.425214": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762946.425214"
+    },
+    "episode_20251030_033644": {
+        "1761763019.424430": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763019.424430"
+    },
+    "episode_20251030_033609": {
+        "1761762983.621800": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762983.621800"
+    },
+    "episode_20251030_033917": {
+        "1761763171.621532": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763171.621532"
+    },
+    "episode_20251030_033415": {
+        "1761762870.624568": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762870.624568"
+    },
+    "episode_20251030_033721": {
+        "1761763056.021506": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763056.021506"
+    },
+    "episode_20251030_033127": {
+        "1761762702.421464": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762702.421464"
+    },
+    "episode_20251030_034000": {
+        "1761763215.224594": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763215.224594"
+    },
+    "episode_20251030_033451": {
+        "1761762906.228378": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762906.228378"
+    },
+    "episode_20251030_033048": {
+        "1761762663.225339": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762663.225339"
+    },
+    "episode_20251030_033801": {
+        "1761763096.023538": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763096.023538"
+    },
+    "episode_20251030_033333": {
+        "1761762828.021503": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762828.021503"
+    },
+    "episode_20251030_033838": {
+        "1761763133.221611": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763133.221611"
+    },
+    "episode_20251030_033255": {
+        "1761762790.226073": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762790.226073"
+    },
+    "episode_20251030_032029": {
+        "1761762044.221536": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762044.221536"
+    },
+    "episode_20251030_032253": {
+        "1761762188.821523": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762188.821523"
+    },
+    "episode_20251030_032533": {
+        "1761762348.421455": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762348.421455"
+    },
+    "episode_20251030_031532": {
+        "1761761748.221407": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761761748.221407"
+    },
+    "episode_20251030_032817": {
+        "1761762511.821510": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762511.821510"
+    },
+    "episode_20251030_032425": {
+        "1761762280.621384": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762280.621384"
+    },
+    "episode_20251030_032948": {
+        "1761762603.023012": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762603.023012"
+    },
+    "episode_20251030_032200": {
+        "1761762135.421349": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762135.421349"
+    },
+    "episode_20251030_032344": {
+        "1761762239.821652": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762239.821652"
+    },
+    "episode_20251030_032656": {
+        "1761762430.828669": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762430.828669"
+    },
+    "episode_20251030_032115": {
+        "1761762090.621460": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762090.621460"
+    },
+    "episode_20251030_032859": {
+        "1761762563.021452": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762563.021452"
+    },
+    "episode_20251030_032738": {
+        "1761762473.021498": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762473.021498"
+    },
+    "episode_20251030_032614": {
+        "1761762388.421614": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761762388.421614"
+    },
+    "episode_20251030_034510": {
+        "1761763525.621921": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763525.621921"
+    },
+    "episode_20251030_035316": {
+        "1761764010.623430": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764010.623430"
+    },
+    "episode_20251030_035107": {
+        "1761763882.422412": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763882.422412"
+    },
+    "episode_20251030_034812": {
+        "1761763707.623264": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763707.623264"
+    },
+    "episode_20251030_034945": {
+        "1761763800.426729": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763800.426729"
+    },
+    "episode_20251030_034850": {
+        "1761763746.823117": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763746.823117"
+    },
+    "episode_20251030_035237": {
+        "1761763972.426040": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763972.426040"
+    },
+    "episode_20251030_034736": {
+        "1761763671.421889": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763671.421889"
+    },
+    "episode_20251030_035351": {
+        "1761764046.421837": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764046.421837"
+    },
+    "episode_20251030_034343": {
+        "1761763438.021755": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763438.021755"
+    },
+    "episode_20251030_034257": {
+        "1761763392.421702": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763392.421702"
+    },
+    "episode_20251030_034656": {
+        "1761763631.421869": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763631.421869"
+    },
+    "episode_20251030_034432": {
+        "1761763487.421646": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763487.421646"
+    },
+    "episode_20251030_034130": {
+        "1761763305.222136": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763305.222136"
+    },
+    "episode_20251030_035430": {
+        "1761764085.821754": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764085.821754"
+    },
+    "episode_20251030_035154": {
+        "1761763927.821772": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763927.821772"
+    },
+    "episode_20251030_034553": {
+        "1761763568.821705": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761763568.821705"
+    },
+    "episode_20251030_040652": {
+        "1761764835.021957": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764835.222159": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion.",
+        "1761764835.422086": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764835.623031": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects.",
+        "1761764835.827929": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764836.023302": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects in the foreground.",
+        "1761764836.222065": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764836.422056": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects in the foreground.",
+        "1761764836.622752": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects.",
+        "1761764836.826697": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764837.022199": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764837.224201": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to some obstruction or partial occlusion.",
+        "1761764837.422051": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects. Therefore, the confidence level is set to medium.",
+        "1761764837.621955": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764837.822061": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is near but not fully visible, it is not ready for insertion.",
+        "1761764838.022471": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764838.222273": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764838.421957": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764838.622074": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764838.823146": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764839.022210": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764839.223122": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764839.422083": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764839.622125": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764839.822128": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761764840.022076": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764840.224543": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764840.422049": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761764840.622442": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764840.822152": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764840.822152"
+    },
+    "episode_20251030_040446": {
+        "1761764709.622153": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761764709.823057": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764710.022011": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764710.222296": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764710.423330": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764710.622381": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764710.822081": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764711.022037": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764711.221992": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764711.422130": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761764711.622047": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764711.821944": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764711.821944"
+    },
+    "episode_20251030_035954": {
+        "1761764417.222089": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, indicating that it is close to the camera's field of view. However, the visibility is not complete due to some obstruction or angle. The confidence level is set to medium as there is enough information to identify the trocar's presence but not its full details. Since the trocar is near, it suggests that it might be ready for insertion if fully visible.",
+        "1761764417.421962": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects.",
+        "1761764417.626555": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects.",
+        "1761764417.822130": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to some obstruction or angle. Therefore, the confidence level is set to medium.",
+        "1761764418.021999": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other components.",
+        "1761764418.222404": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and possible obstruction.",
+        "1761764418.421871": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction.",
+        "1761764418.622287": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects in the foreground.",
+        "1761764418.821967": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects in the foreground.",
+        "1761764419.021964": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects.",
+        "1761764419.221818": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other components.",
+        "1761764419.422036": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other components.",
+        "1761764419.621933": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other components.",
+        "1761764419.822025": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects in the foreground.",
+        "1761764420.021942": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects. Therefore, the confidence level is set to medium.",
+        "1761764420.222204": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764420.421931": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764420.622035": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is near but not fully visible, it is not ready for insertion.",
+        "1761764420.822079": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and possible obstruction.",
+        "1761764421.021879": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and potential obstruction by other components.",
+        "1761764421.221973": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not fully clear due to partial obstruction.",
+        "1761764421.422642": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764421.621928": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764421.821920": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764422.026726": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764422.222108": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is not fully visible, it cannot be determined if it is ready for insertion.",
+        "1761764422.422048": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764422.621873": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764422.821925": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is near but not fully visible, it does not meet the criteria for \"FULLY_VISIBLE AND NEAR\" to be labeled as \"READY_FOR_INSERTION\".",
+        "1761764423.022038": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be near the needle. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764423.221814": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764423.221814"
+    },
+    "episode_20251030_040149": {
+        "1761764533.025629": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects in the foreground.",
+        "1761764533.223056": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764533.421998": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764533.622031": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764533.822030": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764534.027043": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764534.227019": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764534.425133": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, which reduces the confidence level.",
+        "1761764534.623547": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761764534.821981": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764535.022062": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764535.221872": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761764535.422057": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764535.622002": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764535.822196": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764536.022021": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764536.222021": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764536.426407": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764536.621914": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764536.821897": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764537.022366": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764537.022366"
+    },
+    "episode_20251030_040943": {
+        "1761765014.425190": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765014.622020": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765014.822083": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765015.021972": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765015.222126": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not fully clear due to partial obstruction.",
+        "1761765015.422142": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects. Therefore, the confidence level is set to medium.",
+        "1761765015.622073": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761765015.824979": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765016.025442": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765016.223086": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761765016.422037": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761765016.622458": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, which reduces the confidence level.",
+        "1761765016.826480": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765017.025475": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765017.222130": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761765017.421974": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765017.624983": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761765017.624983"
+    },
+    "episode_20251030_040350": {
+        "1761764654.028640": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764654.221950": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764654.422053": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764654.622054": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not fully clear due to partial obstruction.",
+        "1761764654.822047": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764655.024949": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764655.222095": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764655.421893": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764655.421893"
+    },
+    "episode_20251030_040554": {
+        "1761764778.622355": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764778.822142": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764779.022171": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764779.221938": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764779.422582": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764779.622102": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764779.823110": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764780.022435": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764780.222162": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not complete, but it is discernible enough for identification.",
+        "1761764780.423132": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764780.622060": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764780.822017": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764780.822017"
+    },
+    "episode_20251030_041238": {
+        "1761765186.023055": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761765186.225253": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is near but not fully visible, it does not meet the criteria for \"FULLY_VISIBLE AND NEAR\" to be labeled as \"READY_FOR_INSERTION\".",
+        "1761765186.423178": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765186.622131": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765186.822185": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761765187.022141": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761765187.228564": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is not fully visible, it cannot be determined if it is ready for insertion.",
+        "1761765187.426526": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761765187.622068": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761765187.822045": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765188.022342": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761765188.225351": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761765188.225351"
+    },
+    "episode_20251030_040800": {
+        "1761764902.621986": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764902.827091": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761764903.022062": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764903.222102": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764903.422048": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764903.627074": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764903.821925": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects in the foreground.",
+        "1761764904.025499": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764904.222018": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764904.423715": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects in the foreground.",
+        "1761764904.622148": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764904.826192": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761764905.027933": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764905.222139": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764905.425769": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764905.624764": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764905.822112": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764906.022002": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764906.222222": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764906.427569": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764906.626442": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764906.823415": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is not fully visible, it cannot be determined if it is ready for insertion.",
+        "1761764907.022000": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764907.223053": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to some obstruction or partial occlusion.",
+        "1761764907.425619": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764907.622022": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion.",
+        "1761764907.826098": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764907.826098"
+    },
+    "episode_20251030_040857": {
+        "1761764960.622764": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764960.823156": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764961.022993": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764961.222065": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764961.422101": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to some obstruction or angle.",
+        "1761764961.626569": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility. Since the trocar is near but not fully visible, it does not meet the criteria for \"FULLY_VISIBLE AND NEAR\" to be labeled as \"READY_FOR_INSERTION\".",
+        "1761764961.823390": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764962.022317": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761764962.222008": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764962.423145": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764962.623109": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764962.822075": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764963.022642": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764963.022642"
+    },
+    "episode_20251030_040048": {
+        "1761764473.021923": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion.",
+        "1761764473.222219": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764473.421880": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764473.626269": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764473.825532": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion.",
+        "1761764474.022759": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects in the foreground.",
+        "1761764474.222156": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764474.421841": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764474.622806": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764474.823046": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764475.021996": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not fully clear due to partial obstruction.",
+        "1761764475.223017": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764475.421855": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764475.626085": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764475.821944": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects. The confidence level is medium because while the trocar is near, its full visibility is limited.",
+        "1761764476.022082": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764476.222178": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects. Therefore, the confidence level is set to medium.",
+        "1761764476.422023": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764476.622016": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761764476.825709": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761764477.021911": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764477.221958": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764477.421979": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764477.623061": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects. Therefore, the confidence level is set to medium.",
+        "1761764477.822062": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764478.021988": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764478.221910": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not complete due to some obstruction or partial occlusion.",
+        "1761764478.421926": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764478.421926"
+    },
+    "episode_20251030_041049": {
+        "1761765072.622039": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765072.822270": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765073.022053": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765073.222831": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765073.422002": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765073.625264": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765073.822158": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion.",
+        "1761765074.022884": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761765074.222106": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761765074.423065": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765074.622003": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765074.828585": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761765075.022774": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion.",
+        "1761765075.222101": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765075.422087": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761765075.622174": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects. The confidence level is medium because while the trocar is near, its full visibility is compromised.",
+        "1761765075.822099": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761765076.026026": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to the angle and partial obstruction by other components.",
+        "1761765076.223295": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other components. The confidence level is medium because while the trocar is near, its full visibility is limited.",
+        "1761765076.425777": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765076.623045": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761765076.623045"
+    },
+    "episode_20251030_040248": {
+        "1761764591.423034": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the camera's field of view. However, the visibility is not complete due to the angle and potential obstruction by other objects.",
+        "1761764591.621926": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764591.821953": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764592.022005": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764592.222014": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764592.427032": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not fully clear due to partial obstruction.",
+        "1761764592.622018": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764592.827054": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom. However, the visibility is not complete due to the angle and partial obstruction by other objects.",
+        "1761764593.025624": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764593.222097": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764593.424533": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764593.623044": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761764593.821960": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761764594.022485": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764594.221994": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761764594.422003": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761764594.621933": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761764594.823636": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761764594.823636"
+    },
+    "episode_20251030_041142": {
+        "1761765128.425330": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765128.622194": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765128.822659": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to some obstruction or partial occlusion. Therefore, the confidence level is set to medium.",
+        "1761765129.022160": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765129.222263": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765129.422198": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the partial obstruction by other objects in the foreground.",
+        "1761765129.622277": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765129.822161": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765130.022020": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765130.222088": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as the trocar's visibility is not fully clear due to partial obstruction.",
+        "1761765130.422272": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765130.622028": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete due to some obstruction or partial occlusion.",
+        "1761765130.822147": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765131.022996": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761765131.222125": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761765131.422210": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765131.625901": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761765131.822984": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765132.022890": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there is some uncertainty due to partial visibility.",
+        "1761765132.222218": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765132.422041": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765132.622127": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. The confidence level is medium as there might be some uncertainty due to partial visibility.",
+        "1761765132.822045": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761765133.022971": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765133.222128": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other objects.",
+        "1761765133.422135": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating that it might be ready for insertion. However, the visibility is not complete, so the confidence level is set to medium.",
+        "1761765133.626902": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the needle, indicating a near distance. However, the visibility is not fully clear due to the angle and partial obstruction by other components.",
+        "1761765133.822273": "1) Target visibility: PARTIALLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: MEDIUM\n\nThe trocar is partially visible in the image, and it appears to be close to the eye phantom, making it ready for insertion.",
+        "1761765134.022106": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761765134.022106"
+    }
+}

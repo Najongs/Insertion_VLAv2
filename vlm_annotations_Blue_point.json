@@ -1,0 +1,54 @@
+{
+    "episode_20251030_025813": {
+        "1761760709.221024": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760709.221024"
+    },
+    "episode_20251030_025119": {
+        "1761760300.220863": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760300.220863"
+    },
+    "episode_20251030_025605": {
+        "1761760581.020993": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760581.020993"
+    },
+    "episode_20251030_025209": {
+        "1761760347.420968": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760347.420968"
+    },
+    "episode_20251030_025728": {
+        "1761760664.422140": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760664.422140"
+    },
+    "episode_20251030_025421": {
+        "1761760477.221774": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760477.221774"
+    },
+    "episode_20251030_025340": {
+        "1761760435.620971": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760435.620971"
+    },
+    "episode_20251030_025510": {
+        "1761760525.820946": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760525.820946"
+    },
+    "episode_20251030_030137": {
+        "1761760912.422748": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760912.422748"
+    },
+    "episode_20251030_025856": {
+        "1761760755.021199": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760755.021199"
+    },
+    "episode_20251030_030038": {
+        "1761760853.021014": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760853.021014"
+    },
+    "episode_20251030_025952": {
+        "1761760806.821110": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760806.821110"
+    },
+    "episode_20251030_025252": {
+        "1761760387.826899": "1) Target visibility: FULLY_VISIBLE\n2) Needle distance: NEAR\n3) Confidence: HIGH\n4) READY_FOR_INSERTION",
+        "target_found_timestamp": "1761760387.826899"
+    }
+}

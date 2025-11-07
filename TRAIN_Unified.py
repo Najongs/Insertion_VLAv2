@@ -49,6 +49,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, ConcatDataset, DataLoader, random_split
 import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler, WeightedRandomSampler, Subset
@@ -365,7 +366,8 @@ def Train_Diffusion(
     sensor_loss_weight=2.0,
 ):
     """Diffusion-based VLA Training Loop"""
-    loss_fn = nn.MSELoss(reduction='none')
+    # ✅ Using Smooth L1 Loss (Huber Loss) for robustness to outliers
+    loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='none')
     rank = dist.get_rank()
     writer = AsyncCheckpointWriter(max_queue=2, sync_every=0) if rank == 0 else None
 
@@ -427,7 +429,8 @@ def Train_Diffusion(
             loss_rot   = loss_fn(eps_pred[..., 3:6], eps_target[..., 3:6], reduction='none').mean(dim=[1, 2])
             loss_grip  = loss_fn(eps_pred[..., 6:],  eps_target[..., 6:],  reduction='none').mean(dim=[1, 2])
 
-            loss_per_sample = loss_trans + 2.0 * loss_rot + 0.5 * loss_grip
+            # ✅ Updated weights: translation=1.0, rotation=1.0, gripper=0.1
+            loss_per_sample = loss_trans + 1.0 * loss_rot + 0.1 * loss_grip
 
             weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
             if sensor_enabled and has_sensor_mask is not None:
@@ -530,7 +533,8 @@ def validate_diffusion(model, val_loader, device, sensor_enabled, sensor_loss_we
     was_training = model.training
     model.train()
 
-    loss_fn = nn.MSELoss(reduction='none')
+    # ✅ Using Smooth L1 Loss (Huber Loss) for robustness to outliers
+    loss_fn = nn.SmoothL1Loss(beta=1.0, reduction='none')
     total_loss = 0.0
 
     with torch.no_grad():
@@ -555,7 +559,8 @@ def validate_diffusion(model, val_loader, device, sensor_enabled, sensor_loss_we
                 loss_rot   = loss_fn(eps_pred[..., 3:6], eps_target[..., 3:6], reduction='none').mean(dim=[1, 2])
                 loss_grip  = loss_fn(eps_pred[..., 6:],  eps_target[..., 6:],  reduction='none').mean(dim=[1, 2])
 
-                loss_per_sample = loss_trans + 2.0 * loss_rot + 0.5 * loss_grip
+                # ✅ Updated weights: translation=1.0, rotation=1.0, gripper=0.1
+                loss_per_sample = loss_trans + 1.0 * loss_rot + 0.1 * loss_grip
                 
                 weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
 
@@ -595,7 +600,8 @@ def Train_Regression(
     model_type="regression",  # 'regression' or 'flow_matching'
 ):
     """Regression/Flow Matching training loop - OPTIMIZED"""
-    loss_fn = nn.MSELoss()
+    # ✅ Using F.smooth_l1_loss directly in training loop (no need for loss_fn here)
+    # loss_fn = nn.MSELoss()  # Removed - using Smooth L1 Loss instead
     rank = dist.get_rank()
     writer = AsyncCheckpointWriter(max_queue=2, sync_every=0) if rank == 0 else None
 
@@ -640,6 +646,11 @@ def Train_Regression(
                     desc=f"[Rank {rank}] Epoch {epoch+1}",
                     disable=(rank != 0))
 
+        # ✅ Initialize loss components for epoch-end logging
+        last_loss_trans = 0.0
+        last_loss_rot = 0.0
+        last_loss_grip = 0.0
+
         for step, batch in pbar:
             # ⬇️ [수정] try...except 블록 추가
             try:
@@ -654,7 +665,14 @@ def Train_Regression(
                 # ✅ 모든 텐서 GPU로 비동기 전송
                 instructions = batch["instruction"]
                 image_inputs = batch["images"]
-                gt_actions = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
+                gt_actions_full = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
+
+                # ✅ REGRESSION: Use only first action (B, 8, 7) -> (B, 1, 7)
+                # ✅ FLOW_MATCHING: Use all actions (B, 8, 7)
+                if model_type == "regression":
+                    gt_actions = gt_actions_full[:, 0:1, :]  # Only first action
+                else:
+                    gt_actions = gt_actions_full  # All actions
 
                 sensor_data = (
                     batch["sensor_data"].to(device, dtype=torch.bfloat16, non_blocking=True)
@@ -691,6 +709,12 @@ def Train_Regression(
                             sensor_data=sensor_data if sensor_enabled else None,
                             robot_states=robot_states,
                         )
+
+                        # ✅ Count sensor samples for logging
+                        if sensor_enabled and has_sensor_mask is not None:
+                            total_sensor_samples += has_sensor_mask.sum().item()
+                            total_nonsensor_samples += (~has_sensor_mask).sum().item()
+
                         loss = flow_loss / grad_accum_steps
                     else:
                         # Regression: compute MSE loss
@@ -719,16 +743,22 @@ def Train_Regression(
                         weights = weights / weights.mean()
                         # loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
                         # loss = (loss_each * weights).mean() / grad_accum_steps
-                        # ✅ Dual-Head Loss 분리
+                        # ✅ Dual-Head Loss with Smooth L1 (Huber Loss) for outlier robustness
                         pred = pred_actions.float()
                         gt = gt_actions.float()
 
-                        loss_trans = (pred[..., :3] - gt[..., :3]).pow(2).mean(dim=[1, 2])
-                        loss_rot   = (pred[..., 3:6] - gt[..., 3:6]).pow(2).mean(dim=[1, 2])
-                        loss_grip  = (pred[..., 6:]  - gt[..., 6:]).pow(2).mean(dim=[1, 2])
+                        # Using Smooth L1 Loss (beta=1.0 for standard Huber loss)
+                        loss_trans = F.smooth_l1_loss(pred[..., :3], gt[..., :3], beta=1.0, reduction='none').mean(dim=[1, 2])
+                        loss_rot   = F.smooth_l1_loss(pred[..., 3:6], gt[..., 3:6], beta=1.0, reduction='none').mean(dim=[1, 2])
+                        loss_grip  = F.smooth_l1_loss(pred[..., 6:],  gt[..., 6:],  beta=1.0, reduction='none').mean(dim=[1, 2])
 
-                        # 전체 가중치 결합
-                        loss_each = loss_trans + 2.0 * loss_rot + 0.5 * loss_grip
+                        # Store for epoch-end logging
+                        last_loss_trans = loss_trans.mean().item()
+                        last_loss_rot = loss_rot.mean().item()
+                        last_loss_grip = loss_grip.mean().item()
+
+                        # ✅ Updated weights: translation=1.0, rotation=1.0, gripper=0.1
+                        loss_each = loss_trans + 1.0 * loss_rot + 0.1 * loss_grip
                         loss = (loss_each * weights).mean() / grad_accum_steps
 
                 sync_context = model.no_sync() if (step + 1) % grad_accum_steps != 0 else nullcontext()
@@ -797,7 +827,15 @@ def Train_Regression(
                 for batch in val_loader:
                     # ⬇️ [수정] Validation 루프에도 try...except 추가
                     try:
-                        gt_actions = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
+                        gt_actions_full = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
+
+                        # ✅ REGRESSION: Use only first action
+                        # ✅ FLOW_MATCHING: Use all actions
+                        if model_type == "regression":
+                            gt_actions = gt_actions_full[:, 0:1, :]  # Only first action
+                        else:
+                            gt_actions = gt_actions_full  # All actions
+
                         sensor_data = (
                             batch["sensor_data"].to(device, dtype=torch.bfloat16, non_blocking=True)
                             if sensor_enabled else None
@@ -820,7 +858,7 @@ def Train_Regression(
                             if loss.ndim > 0:
                                 loss = loss.mean()
                         else:
-                            # Regression: compute MSE loss
+                            # Regression: compute MSE loss with dual-head
                             pred_actions, _ = model(
                                 text_inputs=batch["instruction"],
                                 image_inputs=batch["images"],
@@ -832,7 +870,17 @@ def Train_Regression(
 
                             weights = torch.tensor(batch["confidence"], device=device, dtype=torch.bfloat16)
                             weights = weights / weights.mean()
-                            loss_each = (pred_actions.float() - gt_actions.float()).pow(2).mean(dim=[1, 2])
+
+                            # ✅ Use dual-head loss with Smooth L1 for validation (consistent with training)
+                            pred = pred_actions.float()
+                            gt = gt_actions.float()
+
+                            loss_trans = F.smooth_l1_loss(pred[..., :3], gt[..., :3], beta=1.0, reduction='none').mean(dim=[1, 2])
+                            loss_rot   = F.smooth_l1_loss(pred[..., 3:6], gt[..., 3:6], beta=1.0, reduction='none').mean(dim=[1, 2])
+                            loss_grip  = F.smooth_l1_loss(pred[..., 6:],  gt[..., 6:],  beta=1.0, reduction='none').mean(dim=[1, 2])
+
+                            # ✅ Updated weights: translation=1.0, rotation=1.0, gripper=0.1
+                            loss_each = loss_trans + 1.0 * loss_rot + 0.1 * loss_grip
                             loss = (loss_each * weights).mean()
                         val_loss_sum += loss.item()
                         val_count += 1
@@ -866,10 +914,9 @@ def Train_Regression(
                 "system/gpu_mem_GB": gpu_mem,
                 "system/cpu_mem_%": cpu_mem,
                 "lr/base_lr": optimizer.param_groups[0]["lr"],
-                "train/loss_total": loss.item() * grad_accum_steps,
-                "train/loss_trans": loss_trans.mean().item(),
-                "train/loss_rot": loss_rot.mean().item(),
-                "train/loss_grip": loss_grip.mean().item(),
+                "train/loss_trans": last_loss_trans,
+                "train/loss_rot": last_loss_rot,
+                "train/loss_grip": last_loss_grip,
                 "train/lr": optimizer.param_groups[0]["lr"]
             }
 
@@ -1212,11 +1259,15 @@ def main():
         print("⏳ Initializing model for training...")
 
     # Initialize unified model based on type
+    # ✅ REGRESSION: Use horizon=1 (predict only first action)
+    # ✅ FLOW_MATCHING: Keep horizon=8 (original behavior)
+    model_horizon = 1 if args.model_type == 'regression' else 8
+
     model = QwenVLAUnified(
         model_type=args.model_type,  # 'diffusion' or 'regression'
         vl_model_name=vl_model_name,
         action_dim=7,
-        horizon=8,
+        horizon=model_horizon,  # ✅ Changed: 1 for regression, 8 for flow_matching
         hidden_dim=1024,
         sensor_enabled=args.sensor_enabled,
         sensor_input_channels=1026,
@@ -1230,6 +1281,9 @@ def main():
         image_resize_width=args.image_resize_width,
         device_map=None,  # Don't use device_map with DDP
     )
+
+    if rank == 0:
+        print(f"   ✅ Model horizon: {model_horizon} ({'single action' if model_horizon == 1 else 'action chunk'})")
 
     # Manually move to device (required for DDP)
     model = model.to(device)

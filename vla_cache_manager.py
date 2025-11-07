@@ -33,7 +33,7 @@ class VLACacheManager:
 
     def __init__(
         self,
-        cache_dir: str = "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
+        cache_dir: str = "/dev/shm/vla_cache",  # ✅ RAM disk 사용 (206MB, 26k files)
         cache_limit_gb: float = 50.0,
     ):
         self.cache_dir = Path(cache_dir)

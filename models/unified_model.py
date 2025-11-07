@@ -36,130 +36,86 @@ from peft import LoraConfig, get_peft_model
 from models.flow_matching import FlowMatchingActionExpert
 
 
-# =====================================
-# 1️⃣ Robot State Encoder (MLP-based)
-# =====================================
+
+
 
 class RobotStateEncoder(nn.Module):
     """
-    MLP-based encoder for robot state (joint angles + pose)
-
-    Robot state is more structured than sensor data:
-    - 12 dimensions: 6 joint angles + 6 pose (x,y,z,a,b,r)
-    - Direct physical meaning (no noise like force sensors)
-    - Temporal sequence needs temporal modeling
-
-    Architecture:
-    1. Per-timestep MLP: (12) → (hidden_dim)
-    2. Temporal attention or pooling
-    3. Final projection to output_dim
+    Transformer-based encoder for robot state sequences (joint angles + pose).
+    Now includes temporal pooling and projection for a fixed-size output, similar to SensorEncoder.
     """
-
-    def __init__(
-        self,
-        input_dim: int = 12,  # 6 joints + 6 poses
-        temporal_length: int = 65,
-        hidden_dim: int = 256,
-        output_dim: int = 2048,
-        num_layers: int = 3,
-        use_temporal_attention: bool = True,
-        nhead: int = 8,
-        dropout: float = 0.1
-    ):
+    def __init__(self, 
+                 input_dim: int = 12, 
+                 model_dim: int = 256,
+                 output_dim: int = 2048,
+                 num_heads: int = 8,
+                 num_layers: int = 4,
+                 temporal_length: int = 60,
+                 dropout: float = 0.1):
         super().__init__()
-
         self.input_dim = input_dim
-        self.temporal_length = temporal_length
-        self.output_dim = output_dim
-        self.use_temporal_attention = use_temporal_attention
+        self.model_dim = model_dim
 
-        # Per-timestep MLP (shared across time)
-        mlp_layers = []
-        current_dim = input_dim
-        for i in range(num_layers):
-            next_dim = hidden_dim if i == 0 else hidden_dim * 2
-            mlp_layers.extend([
-                nn.Linear(current_dim, next_dim),
-                nn.LayerNorm(next_dim),
-                nn.GELU(),
-                nn.Dropout(dropout)
-            ])
-            current_dim = next_dim
+        # 1. Input projection
+        self.input_proj = nn.Linear(input_dim, model_dim)
 
-        self.per_timestep_mlp = nn.Sequential(*mlp_layers)
+        # 2. Positional encoding
+        self.pos_encoder = nn.Parameter(torch.zeros(1, temporal_length, model_dim))
 
-        # Temporal modeling
-        if use_temporal_attention:
-            # Transformer encoder for temporal dependencies
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=current_dim,
-                nhead=nhead,
-                dim_feedforward=current_dim * 4,
-                dropout=dropout,
-                batch_first=True,
-                norm_first=True
-            )
-            self.temporal_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
-        else:
-            # Simple temporal pooling
-            self.temporal_encoder = None
-
-        # Output projection
-        self.output_proj = nn.Sequential(
-            nn.Linear(current_dim, output_dim),
+        # 3. Transformer Encoder
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=model_dim, 
+            nhead=num_heads, 
+            dim_feedforward=model_dim * 4,
+            dropout=dropout,
+            activation='gelu',
+            batch_first=True, # Important
+            norm_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        # 4. Temporal Pooling and Projection Head
+        self.temporal_pool = nn.AdaptiveAvgPool1d(1)
+        self.projection = nn.Sequential(
+            nn.Linear(model_dim, output_dim),
             nn.LayerNorm(output_dim),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(output_dim, output_dim)
+            nn.Linear(output_dim, output_dim),
         )
 
-        print(f"✅ RobotStateEncoder initialized:")
-        print(f"   Input: (B, {temporal_length}, {input_dim}) - [joints:6, poses:6]")
-        print(f"   Per-timestep MLP: {num_layers} layers → {current_dim} dims")
-        print(f"   Temporal: {'Transformer attention' if use_temporal_attention else 'Avg pooling'}")
-        print(f"   Output: (B, {output_dim})")
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, robot_states: torch.Tensor) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, return_sequence: bool = False) -> torch.Tensor:
         """
         Args:
-            robot_states: (B, T, 12) where T can be variable
+            src (torch.Tensor): Robot state sequence, shape (B, T, D_in)
+            return_sequence (bool): If True, return the full output sequence from the transformer.
+                                    Otherwise, return the pooled and projected feature vector.
+        
         Returns:
-            features: (B, output_dim)
+            torch.Tensor: Encoded features. Shape is (B, D_out) if return_sequence is False,
+                          and (B, T, model_dim) if return_sequence is True.
         """
-        B, T, C = robot_states.shape
+        # Project input and add positional encoding
+        x = self.input_proj(src) # (B, T, model_dim)
+        x = x + self.pos_encoder
+        x = self.dropout(x)
 
-        if C != self.input_dim:
-            raise ValueError(f"Expected {self.input_dim} channels, got {C}")
+        # Pass through transformer
+        x = self.transformer_encoder(x) # (B, T, model_dim)
 
-        # Handle variable temporal length with padding/truncation
-        if T < self.temporal_length:
-            # Pad with zeros
-            pad = torch.zeros((B, self.temporal_length - T, C),
-                            device=robot_states.device, dtype=robot_states.dtype)
-            x = torch.cat([robot_states, pad], dim=1)
-        elif T > self.temporal_length:
-            # Truncate (take last temporal_length timesteps)
-            x = robot_states[:, -self.temporal_length:, :]
-        else:
-            x = robot_states
+        # Conditionally return the sequence for MAE pre-training
+        if return_sequence:
+            return x
 
-        # Per-timestep encoding: (B, T, 12) → (B, T, hidden_dim)
-        x = self.per_timestep_mlp(x)
+        # Pool and project for downstream tasks
+        pooled_x = x.transpose(1, 2) # (B, model_dim, T)
+        pooled_x = self.temporal_pool(pooled_x).squeeze(-1) # (B, model_dim)
+        output_features = self.projection(pooled_x) # (B, output_dim)
+        
+        return output_features
 
-        # Temporal modeling
-        if self.use_temporal_attention:
-            # Transformer attention across time
-            x = self.temporal_encoder(x)  # (B, T, hidden_dim)
-            # Average pooling across time
-            x = x.mean(dim=1)  # (B, hidden_dim)
-        else:
-            # Simple average pooling
-            x = x.mean(dim=1)  # (B, hidden_dim)
-
-        # Output projection
-        features = self.output_proj(x)  # (B, output_dim)
-
-        return features
 
 
 # =====================================
@@ -199,25 +155,13 @@ class ResidualDownsample1d(nn.Module):
             self.bn2.float()
 
     def forward(self, x):
-        dtype = x.dtype
-
         y = self.conv1(x)
-        if self.bn_fp32:
-            with torch.cuda.amp.autocast(enabled=False):
-                y = self.bn1(y.float())
-            y = y.to(dtype)
-        else:
-            y = self.bn1(y)
+        y = self.bn1(y)
         y = self.act1(y)
         y = self.do1(y)
 
         y = self.conv2(y)
-        if self.bn_fp32:
-            with torch.cuda.amp.autocast(enabled=False):
-                y = self.bn2(y.float())
-            y = y.to(dtype)
-        else:
-            y = self.bn2(y)
+        y = self.bn2(y)
         y = self.act2(y)
 
         s = self.skip(x)
@@ -229,6 +173,87 @@ def force_bn_fp32_(module: torch.nn.Module):
     for m in module.modules():
         if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
             m.float()  # weights/bias & running stats 모두 FP32로
+
+
+# =====================================
+# Force-Aware Sensor Encoder
+# =====================================
+class ForceAwareSensorEncoder(nn.Module):
+    """
+    Sensor encoder that processes 'distance' (1025 channels) and 'force' (1 channel)
+    features separately to give more weight to the force data.
+
+    Architecture:
+    1.  The first 1025 channels ('distance') are processed by a standard SensorEncoder.
+    2.  The last 1 channel ('force') is processed by a dedicated MLP.
+    3.  The outputs from both are concatenated and projected to the final output dimension.
+    """
+    def __init__(self,
+                 dist_channels=1025,
+                 force_channels=1,
+                 temporal_length=65,
+                 dist_hidden_dim=512,
+                 force_hidden_dim=128,
+                 output_dim=3072,
+                 **kwargs):
+        super().__init__()
+        self.input_channels = dist_channels + force_channels
+
+        print(f"🚀 Initializing ForceAwareSensorEncoder:")
+        print(f"   - Distance features (1-{dist_channels}) processed by a full ConvFormer.")
+        print(f"   - Force features ({dist_channels+1}) processed by a dedicated MLP.")
+
+        # Encoder for the main 'distance' features
+        self.dist_encoder = SensorEncoder(
+            input_channels=dist_channels,
+            temporal_length=temporal_length,
+            hidden_dim=dist_hidden_dim,
+            output_dim=output_dim - force_hidden_dim, # Allocate part of the output space
+            **kwargs
+        )
+        # Ensure BatchNorm layers within dist_encoder are float32
+        force_bn_fp32_(self.dist_encoder)
+
+        # A smaller, dedicated MLP for the 'force' feature
+        self.force_encoder = nn.Sequential(
+            nn.Linear(force_channels, force_hidden_dim // 2),
+            nn.GELU(),
+            nn.LayerNorm(force_hidden_dim // 2),
+            nn.Linear(force_hidden_dim // 2, force_hidden_dim)
+        )
+        self.force_pool = nn.AdaptiveAvgPool1d(1)
+
+        print(f"   - Final output: Concatenated and projected to {output_dim} dims.")
+
+
+    def forward(self, sensor_data: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            sensor_data: (B, T, C) where C is self.input_channels (1026)
+        Returns:
+            features: (B, output_dim)
+        """
+        B, T, C = sensor_data.shape
+        if C != self.input_channels:
+            raise ValueError(f"Expected {self.input_channels} channels, got {C}")
+
+        # Split data into distance and force
+        dist_data = sensor_data[..., :-1]  # (B, T, 1025)
+        force_data = sensor_data[..., -1:] # (B, T, 1)
+
+        # 1. Process distance data through the main encoder
+        dist_features = self.dist_encoder(dist_data) # (B, output_dim - force_hidden_dim)
+
+        # 2. Process force data through the dedicated MLP
+        #    Input to MLP is (B, T, 1)
+        force_features_temporal = self.force_encoder(force_data) # (B, T, force_hidden_dim)
+        #    Pool across time dimension
+        force_features_pooled = self.force_pool(force_features_temporal.transpose(1, 2)).squeeze(-1) # (B, force_hidden_dim)
+
+        # 3. Concatenate and return
+        combined_features = torch.cat([dist_features, force_features_pooled], dim=-1)
+
+        return combined_features
 
 
 # =====================================
@@ -952,6 +977,7 @@ class QwenVLAUnified(nn.Module):
 
                 # Sensor encoder params
                 sensor_enabled=True,
+                sensor_encoder_type: Literal['default', 'force_aware'] = 'default',
                 sensor_input_channels=1026,
                 sensor_temporal_length=650,
                 sensor_hidden_dim=512,
@@ -1060,15 +1086,30 @@ class QwenVLAUnified(nn.Module):
 
         # Sensor Encoder
         if sensor_enabled:
-            self.sensor_encoder = SensorEncoder(
-                input_channels=sensor_input_channels,
-                temporal_length=sensor_temporal_length,
-                hidden_dim=sensor_hidden_dim,
-                output_dim=sensor_output_dim,
-                use_transformer=True,
-                num_transformer_layers=2
-            ).to(dtype=torch.bfloat16, device="cuda")
-            force_bn_fp32_(self.sensor_encoder)  # 🔴 전역 캐스트 이후에 호출해야 유효
+            if sensor_encoder_type == 'force_aware':
+                print("   Sensor Encoder Type: Force-Aware")
+                self.sensor_encoder = ForceAwareSensorEncoder(
+                    dist_channels=sensor_input_channels - 1,
+                    force_channels=1,
+                    temporal_length=sensor_temporal_length,
+                    dist_hidden_dim=sensor_hidden_dim,
+                    force_hidden_dim=128,
+                    output_dim=sensor_output_dim,
+                    use_transformer=True,
+                    num_transformer_layers=2
+                ).to(dtype=torch.bfloat16, device="cuda")
+            else:  # 'default'
+                print("   Sensor Encoder Type: Default")
+                self.sensor_encoder = SensorEncoder(
+                    input_channels=sensor_input_channels,
+                    temporal_length=sensor_temporal_length,
+                    hidden_dim=sensor_hidden_dim,
+                    output_dim=sensor_output_dim,
+                    use_transformer=True,
+                    num_transformer_layers=2
+                ).to(dtype=torch.bfloat16, device="cuda")
+
+            force_bn_fp32_(self.sensor_encoder)
 
         else:
             self.sensor_encoder = None
@@ -1079,11 +1120,10 @@ class QwenVLAUnified(nn.Module):
             self.robot_state_encoder = RobotStateEncoder(
                 input_dim=12,  # 6 joints + 6 poses
                 temporal_length=sensor_temporal_length,
-                hidden_dim=256,  # Smaller than sensor (robot state is simpler)
+                model_dim=256,  # Smaller than sensor (robot state is simpler)
                 output_dim=sensor_output_dim,  # Same output dim as sensor for fusion
                 num_layers=3,
-                use_temporal_attention=True,
-                nhead=8,
+                num_heads=8,
                 dropout=0.1
             ).to(dtype=torch.bfloat16, device="cuda")
         else:

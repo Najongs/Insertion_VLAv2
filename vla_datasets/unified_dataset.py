@@ -122,6 +122,7 @@ class UnifiedVLADataset(Dataset):
         action_expert_hz: int = 10,
         instruction: Optional[str] = None,
         cache_root: str = "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
+        use_cache: bool = True,
     ):
         self.data_dir = Path(data_dir)
         self.cache_root = Path(cache_root)
@@ -130,6 +131,7 @@ class UnifiedVLADataset(Dataset):
         self.sensor_window_size = int(sensor_window_size)
         self.action_expert_hz = int(action_expert_hz)
         self.sensor_hz = 650
+        self.use_cache = use_cache
 
         # Auto-detect format
         if format == 'auto':
@@ -179,8 +181,42 @@ class UnifiedVLADataset(Dataset):
         # Images
         self.images = data.get("image", {}) or {}
 
-        # Instruction
-        self.instruction = instruction or data.get("instruction", "Perform needle insertion task.")
+        # Instruction - Enhanced with view-specific guidance for Qwen2.5-VL
+        if instruction is None:
+            base_instruction = data.get("instruction", "needle insertion")
+            task_name = base_instruction.replace("Perform ", "").replace(" task.", "")
+
+            if self.use_cache:
+                # Detailed prompt for cache mode
+                view_names = list(self.images.keys()) if self.images else []
+                if view_names:
+                    view_descriptions = []
+                    for view_name in view_names:
+                        if "5" in str(view_name) or "Oak" in str(view_name) or "oak" in str(view_name):
+                            view_descriptions.append(f"[{view_name}] HAND-EYE CAMERA - CRITICAL: IDENTIFY the insertion target. LOCATE its exact position. TRACK it continuously.")
+                        elif "1" in str(view_name) or "front" in str(view_name).lower():
+                            view_descriptions.append(f"[{view_name}] FRONT VIEW: Locate the target and plan approach trajectory.")
+                        elif "2" in str(view_name) or "side" in str(view_name).lower():
+                            view_descriptions.append(f"[{view_name}] SIDE VIEW: Determine depth and check alignment with target.")
+                        else:
+                            view_descriptions.append(f"[{view_name}] Analyze spatial relationships.")
+                    view_guide = "\n".join(view_descriptions)
+                    self.instruction = (
+                        f"ROBOTICS VISION TASK: {task_name}\n\n"
+                        f"MULTI-VIEW ANALYSIS:\n{view_guide}\n\n"
+                        f"OBJECTIVE: Generate robot actions to insert into the identified target location."
+                    )
+                else:
+                    self.instruction = f"ROBOTICS VISION TASK: {task_name}. OBJECTIVE: Generate robot actions to accurately insert into the identified target."
+            else:
+                # Grounding prompt for live mode
+                self.instruction = (
+                    f"TASK: {task_name}. "
+                    f"PROMPT: Based on the multi-view images, first, detect the <ref>insertion target</ref> and the <ref>robot gripper</ref>. "
+                    f"Then, generate the action to move the gripper towards the target."
+                )
+        else:
+            self.instruction = instruction
 
         # Sensor data
         self.has_sensor = ("sensor_data" in data) and (data["sensor_data"] is not None)
@@ -263,9 +299,38 @@ class UnifiedVLADataset(Dataset):
         self.action_interval = int(self.robot_hz / self.action_expert_hz)
         self.vlm_interval = self.action_interval * self.vlm_reuse_count
 
-        # Instruction
+        # Instruction - Enhanced with view-specific guidance for Qwen2.5-VL
         task_name = self.data_dir.parent.name.replace('_', ' ')
-        self.instruction = instruction or f"Perform {task_name} insertion task."
+
+        if instruction is None:
+            if self.use_cache:
+                # Detailed prompt for cache mode
+                camera_views = self.meta.get("camera_views", [])
+                view_descriptions = []
+                for i, view_name in enumerate(camera_views, 1):
+                    if "View5" in view_name or "Oak" in view_name:
+                        view_descriptions.append(f"[{view_name}] HAND-EYE CAMERA - CRITICAL: IDENTIFY the insertion target. LOCATE its exact position. TRACK it continuously.")
+                    elif i == 1 or "View1" in view_name:
+                        view_descriptions.append(f"[{view_name}] FRONT VIEW: Locate the target and plan approach trajectory.")
+                    elif i == 2 or "View2" in view_name:
+                        view_descriptions.append(f"[{view_name}] SIDE VIEW: Determine depth and check alignment.")
+                    else:
+                        view_descriptions.append(f"[{view_name}] ADDITIONAL PERSPECTIVE: Analyze spatial relationships.")
+                view_guide = "\n".join(view_descriptions)
+                self.instruction = (
+                    f"ROBOTICS VISION TASK: {task_name} insertion control\n\n"
+                    f"MULTI-VIEW ANALYSIS:\n{view_guide}\n\n"
+                    f"CONTROL OBJECTIVE: Generate precise robot actions to insert into the identified target."
+                )
+            else:
+                # Grounding prompt for live mode
+                self.instruction = (
+                    f"TASK: {task_name} insertion. "
+                    f"PROMPT: In the multi-view images, detect the <ref>insertion target</ref> and the <ref>robot gripper</ref>. "
+                    f"Based on their spatial relationship, generate the action to insert the tool into the target."
+                )
+        else:
+            self.instruction = instruction
 
         # Sensor data (mmap)
         self.sensor_path = self.data_dir / "sensor_data.npz"
@@ -486,6 +551,14 @@ class UnifiedVLADataset(Dataset):
 
         cache_key = f"{self.data_dir.name}_vlm{vlm_idx}"
 
+        # Extract timestamp from the first image path, if available
+        timestamp = 0.0
+        if image_paths and image_paths[0]:
+            try:
+                timestamp = float(Path(image_paths[0]).stem)
+            except (ValueError, IndexError):
+                pass # Keep timestamp as 0.0 if parsing fails
+
         return {
             "instruction": self.instruction,
             "images": image_paths,
@@ -499,6 +572,8 @@ class UnifiedVLADataset(Dataset):
             "vlm_idx": int(vlm_idx),
             "reuse_step": int(reuse_step),
             "confidence": 1.0,
+            "episode_id": self.data_dir.name,
+            "timestamp": timestamp,
         }
 
     def _load_vl_or_images(self, vlm_idx):
@@ -510,7 +585,7 @@ class UnifiedVLADataset(Dataset):
 
         cache_path = self.vl_cache_files.get(vlm_idx)
 
-        if cache_path:
+        if self.use_cache and cache_path:
             # Use cache manager for loading
             cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
             vl_cache = cache_mgr.load_cache(
@@ -726,9 +801,11 @@ def create_unified_dataloader(
     sensor_window_size: int = 65,
     action_expert_hz: int = 10,
     cache_root: str = "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
+    use_cache: bool = True,
     distributed: bool = False,
     rank: int = 0,
     world_size: int = 1,
+    return_dataset: bool = False, # <-- Add this argument
 ):
     """
     통합 데이터로더 생성
@@ -771,6 +848,7 @@ def create_unified_dataloader(
                         sensor_window_size=sensor_window_size,
                         action_expert_hz=action_expert_hz,
                         cache_root=cache_root,
+                        use_cache=use_cache,
                     )
                     datasets.append(ds)
                     dataset_weights.extend([old_weight] * len(ds))
@@ -801,6 +879,7 @@ def create_unified_dataloader(
                             action_expert_hz=action_expert_hz,
                             instruction=instruction,
                             cache_root=cache_root,
+                            use_cache=use_cache,
                         )
                         datasets.append(ds)
                         dataset_weights.extend([new_weight] * len(ds))
@@ -819,6 +898,12 @@ def create_unified_dataloader(
     print(f"   Old dataset samples: {sum(1 for w in dataset_weights if w == old_weight)}")
     print(f"   New dataset samples: {sum(1 for w in dataset_weights if w == new_weight)}")
     print(f"   Sampling ratio (new:old): {new_weight}:{old_weight}")
+
+    if return_dataset:
+        # Add a num_old_samples and num_new_samples attribute to the dataset for logging
+        full_dataset.num_old_samples = sum(1 for w in dataset_weights if w == old_weight)
+        full_dataset.num_new_samples = sum(1 for w in dataset_weights if w == new_weight)
+        return full_dataset
 
     # Create sampler
     sampler = None
@@ -846,8 +931,8 @@ def create_unified_dataloader(
         sampler=sampler,
         num_workers=num_workers,
         collate_fn=unified_collate_fn,
-        # ✅ OPTIMIZATION: Increase prefetch for better GPU utilization
-        prefetch_factor=6 if num_workers > 0 else None,  # Increased from 4 to 6
+        # ✅ OPTIMIZATION: Prefetch to keep GPU busy
+        prefetch_factor=4 if num_workers > 0 else None,  # Balance between memory and GPU utilization
         persistent_workers=(num_workers > 0),
         pin_memory=True,
         # ✅ OPTIMIZATION: Specify pin_memory_device for faster transfers

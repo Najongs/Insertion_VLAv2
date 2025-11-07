@@ -364,8 +364,8 @@ class FlowMatchingActionExpert(nn.Module):
         # Predict velocity
         v_pred = self.forward(x_t, t, vl_tokens, sensor_features, robot_state_features)
 
-        # MSE loss
-        loss = torch.nn.functional.mse_loss(v_pred, u_t)
+        # Smooth L1 loss (less sensitive to outliers)
+        loss = torch.nn.functional.smooth_l1_loss(v_pred, u_t)
 
         return loss
 

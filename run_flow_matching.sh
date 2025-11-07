@@ -1,98 +1,182 @@
 #!/bin/bash
+set -e
 
-# Flow Matching Training Script for VLA
-# Using Optimal Transport Conditional Flow Matching (OT-CFM)
-# Based on Pi0 paper: https://arxiv.org/pdf/2410.24164v1
+# VLA Full Training Pipeline
+# This script runs the full training pipeline in the specified order:
+# 1. Optional: Pre-train Sensor & Robot State Encoders.
+# 2. Main VLA Training using a 2-Stage strategy (Cache -> Live).
+
+# =====================================
+# General Training Configuration
+# =====================================
+# Total epochs are split between Stage 1 (cache) and Stage 2 (live)
+TOTAL_MAIN_EPOCHS=50
+STAGE1_RATIO=0.9 # 90% of training with cache
+
+# Pre-training epochs (if enabled)
+SENSOR_PRETRAIN_EPOCHS=50
+ROBOT_PRETRAIN_EPOCHS=300
+
+# Batch sizes
+PRETRAIN_BATCH_SIZE=32
+MAIN_BATCH_SIZE=4
+GRAD_ACCUM=8
+
+# Validation split ratio
+VAL_SPLIT=0.05
+
+# Calculate epochs for each stage
+STAGE1_EPOCHS=$(printf "%.0f" $(echo "$TOTAL_MAIN_EPOCHS * $STAGE1_RATIO" | bc))
+STAGE2_EPOCHS=$(($TOTAL_MAIN_EPOCHS - $STAGE1_EPOCHS))
+
+# Checkpoint paths for resuming
+FM_CHECKPOINT="./checkpoints/flow_matching_latest.pt"
+REG_CHECKPOINT="./checkpoints/regression_latest.pt"
+SENSOR_CLIP_CHECKPOINT="./checkpoints/sensor_clip_latest.pth"
+ROBOT_STATE_MAE_CHECKPOINT="./checkpoints/robot_state_mae_best.pth"
 
 # Number of GPUs
 NUM_GPUS=4
 
-# torchrun --nproc_per_node=4 TRAIN_Unified.py \
-#     --model-type regression \
-#     --mode cache
-
-# Training configuration
-MODEL_TYPE="flow_matching"  # Use flow matching
-EPOCHS=100
-BATCH_SIZE=64  # Per GPU
-GRAD_ACCUM=8  # Effective batch size = 4 GPUs × 1 × 4 = 16
+# Fixed training parameters
 LR=1e-4
 WEIGHT_DECAY=0.01
-
-# Sensor configuration
-SENSOR_ENABLED=true
-SENSOR_LOSS_WEIGHT=1.0
-
-# Fusion strategy
-FUSION="concat"  # Options: concat, cross_attention, gated, none
-
-# Data paths
-OLD_DATA="/home/najo/NAS/VLA/dataset/recv_all_*"
-NEW_DATA="/home/najo/NAS/VLA/dataset/New_dataset"
-
-# Sampling weights (new:old ratio)
-OLD_WEIGHT=1.0
-NEW_WEIGHT=1.0
-
-# Image resize for faster training
+SENSOR_ENABLED="--sensor_enabled"
+FUSION="concat"
+DATASET_PATH="/home/najo/NAS/VLA/dataset/New_dataset"
 IMG_HEIGHT=360
 IMG_WIDTH=640
+ANNOTATION_PATH="vlm_annotations.json"
+IMPORTANT_WEIGHT=10.0
 
-echo "🚀 Starting Flow Matching Training"
-echo "   Model: ${MODEL_TYPE}"
-echo "   GPUs: ${NUM_GPUS}"
-echo "   Batch Size (per GPU): ${BATCH_SIZE}"
-echo "   Gradient Accumulation: ${GRAD_ACCUM}"
-echo "   Effective Batch Size: $((NUM_GPUS * BATCH_SIZE * GRAD_ACCUM))"
-echo "   Learning Rate: ${LR}"
-echo "   Sensor Enabled: ${SENSOR_ENABLED}"
-echo "   Fusion Strategy: ${FUSION}"
+# VL model is always frozen, as per user's instruction.
+FINETUNE_ARGS="--finetune_vl none"
+
+# =================================================================
+# 1. PRE-TRAINING (OPTIONAL - UNCOMMENT TO RUN)
+# =================================================================
+
+# --- 1.1 Sensor Encoder Pre-training (CLIP-style) ---
+echo ""
+echo "=============== 1.1 SENSOR ENCODER PRE-TRAINING (CLIP) ==============="
+echo "Epochs: $SENSOR_PRETRAIN_EPOCHS, Batch Size: $PRETRAIN_BATCH_SIZE"
+torchrun --nproc_per_node=$NUM_GPUS TRAIN_SensorImage_CLIP.py \
+    --epochs $SENSOR_PRETRAIN_EPOCHS \
+    --batch_size $PRETRAIN_BATCH_SIZE \
+    --learning_rate $LR \
+    --new_dataset_path $DATASET_PATH \
+    --val_split $VAL_SPLIT \
+    --checkpoint_dir ./checkpoints \
+    --annotation_path $ANNOTATION_PATH \
+    --important_weight $IMPORTANT_WEIGHT \
+    --resume_from $SENSOR_CLIP_CHECKPOINT
+echo "=============== SENSOR ENCODER PRE-TRAINING COMPLETE ==============="
 echo ""
 
-# Run training with torchrun
-torchrun \
-    --nproc_per_node=${NUM_GPUS} \
-    --master_port=29500 \
-    TRAIN_Unified.py \
-    --model-type ${MODEL_TYPE} \
-    --mode train \
-    --dataset_dir "${OLD_DATA}" \
-    --epochs ${EPOCHS} \
-    --batch_size ${BATCH_SIZE} \
-    --grad_accum ${GRAD_ACCUM} \
-    --lr ${LR} \
-    --sensor_enabled \
-    --sensor_loss_weight ${SENSOR_LOSS_WEIGHT} \
-    --fusion_strategy ${FUSION} \
-    --image_resize_height ${IMG_HEIGHT} \
-    --image_resize_width ${IMG_WIDTH} \
-    --val_split 0.05 \
-    --num_workers 8 \
-    --sched_on step \
-    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/flow_matching_latest.pt
 
-torchrun --nproc_per_node=$NUM_GPUS \
-    --master_port=29500 \
-    TRAIN_Unified.py \
-    --model-type regression \
-    --mode train \
-    --dataset_dir /home/najo/NAS/VLA/dataset \
-    --batch_size ${BATCH_SIZE} \
-    --grad_accum ${GRAD_ACCUM} \
-    --lr 5e-5 \
-    --sensor_lr 5e-4 \
-    --min_lr 1e-6 \
-    --epochs ${EPOCHS} \
-    --sensor_enabled \
-    --sensor_loss_weight 1.0 \
-    --fusion_strategy concat \
-    --image_resize_height 360 \
-    --image_resize_width 640 \
-    --val_split 0.05 \
-    --num_workers 8 \
-    --resume /home/najo/NAS/VLA/Insertion_VLAv2/checkpoints/regression_latest.pt
-
+# --- 1.2 Robot State Encoder Pre-training (MAE) ---
 echo ""
-echo "✅ Flow Matching Training Complete!"
-echo "   Checkpoints saved in: ./checkpoints/"
-echo "   Model type: flow_matching"
+echo "=============== 1.2 ROBOT STATE ENCODER PRE-TRAINING (MAE) ==============="
+echo "Epochs: $ROBOT_PRETRAIN_EPOCHS, Batch Size: 128"
+torchrun --nproc_per_node=$NUM_GPUS TRAIN_RobotState_MAE.py \
+    --epochs $ROBOT_PRETRAIN_EPOCHS \
+    --batch_size 128 \
+    --learning_rate 3e-4 \
+    --dataset_path $DATASET_PATH \
+    --val_split $VAL_SPLIT \
+    --checkpoint_dir ./checkpoints \
+    --resume $ROBOT_STATE_MAE_CHECKPOINT
+echo "=============== ROBOT STATE ENCODER PRE-TRAINING COMPLETE ==============="
+echo ""
+
+
+# =================================================================
+# 2. MAIN VLA TRAINING (REGRESSION)
+# =================================================================
+
+# --- 2.1 Regression Training: Stage 1 (Cache Mode) ---
+echo ""
+echo "=============== 2.1 REGRESSION TRAINING (STAGE 1: CACHE) ==============="
+echo "Epochs: $STAGE1_EPOCHS, Batch Size: $MAIN_BATCH_SIZE, Grad Accum: $GRAD_ACCUM"
+torchrun --nproc_per_node=$NUM_GPUS TRAIN_Regression.py \
+    --epochs $STAGE1_EPOCHS \
+    --batch_size $MAIN_BATCH_SIZE \
+    --grad_accum $GRAD_ACCUM \
+    --lr $LR \
+    --image_resize_height $IMG_HEIGHT \
+    --image_resize_width $IMG_WIDTH \
+    --fusion_strategy $FUSION \
+    $SENSOR_ENABLED \
+    $FINETUNE_ARGS \
+    --val_split $VAL_SPLIT \
+    --load_sensor_encoder_checkpoint $SENSOR_CLIP_CHECKPOINT \
+    --load_robot_state_encoder_checkpoint $ROBOT_STATE_MAE_CHECKPOINT \
+    --use_cache
+echo "=============== REGRESSION STAGE 1 COMPLETE ==============="
+echo ""
+
+# --- 2.2 Regression Training: Stage 2 (Live Mode) ---
+echo ""
+echo "=============== 2.2 REGRESSION TRAINING (STAGE 2: LIVE) ==============="
+echo "Epochs: $STAGE2_EPOCHS, Batch Size: $MAIN_BATCH_SIZE, Grad Accum: $GRAD_ACCUM"
+torchrun --nproc_per_node=$NUM_GPUS TRAIN_Regression.py \
+    --epochs $STAGE2_EPOCHS \
+    --batch_size $MAIN_BATCH_SIZE \
+    --grad_accum $GRAD_ACCUM \
+    --lr $LR \
+    --image_resize_height $IMG_HEIGHT \
+    --image_resize_width $IMG_WIDTH \
+    --fusion_strategy $FUSION \
+    $SENSOR_ENABLED \
+    $FINETUNE_ARGS \
+    --val_split $VAL_SPLIT \
+    --resume $REG_CHECKPOINT
+echo "=============== REGRESSION STAGE 2 COMPLETE ==============="
+echo ""
+
+
+# =================================================================
+# 3. MAIN VLA TRAINING (FLOW MATCHING)
+# =================================================================
+
+# --- 3.1 Flow Matching Training: Stage 1 (Cache Mode) ---
+echo ""
+echo "=============== 3.1 FLOW MATCHING TRAINING (STAGE 1: CACHE) ==============="
+echo "Epochs: $STAGE1_EPOCHS, Batch Size: $MAIN_BATCH_SIZE, Grad Accum: $GRAD_ACCUM"
+torchrun --nproc_per_node=$NUM_GPUS TRAIN_FlowMatching.py \
+    --epochs $STAGE1_EPOCHS \
+    --batch_size $MAIN_BATCH_SIZE \
+    --grad_accum $GRAD_ACCUM \
+    --lr $LR \
+    --image_resize_height $IMG_HEIGHT \
+    --image_resize_width $IMG_WIDTH \
+    --fusion_strategy $FUSION \
+    $SENSOR_ENABLED \
+    $FINETUNE_ARGS \
+    --val_split $VAL_SPLIT \
+    --load_sensor_encoder_checkpoint $SENSOR_CLIP_CHECKPOINT \
+    --load_robot_state_encoder_checkpoint $ROBOT_STATE_MAE_CHECKPOINT \
+    --use_cache
+echo "=============== FLOW MATCHING STAGE 1 COMPLETE ==============="
+echo ""
+
+# --- 3.2 Flow Matching Training: Stage 2 (Live Mode) ---
+echo ""
+echo "=============== 3.2 FLOW MATCHING TRAINING (STAGE 2: LIVE) ==============="
+echo "Epochs: $STAGE2_EPOCHS, Batch Size: $MAIN_BATCH_SIZE, Grad Accum: $GRAD_ACCUM"
+torchrun --nproc_per_node=$NUM_GPUS TRAIN_FlowMatching.py \
+    --epochs $STAGE2_EPOCHS \
+    --batch_size $MAIN_BATCH_SIZE \
+    --grad_accum $GRAD_ACCUM \
+    --lr $LR \
+    --image_resize_height $IMG_HEIGHT \
+    --image_resize_width $IMG_WIDTH \
+    --fusion_strategy $FUSION \
+    $SENSOR_ENABLED \
+    $FINETUNE_ARGS \
+    --val_split $VAL_SPLIT \
+    --resume $FM_CHECKPOINT
+echo "=============== FLOW MATCHING STAGE 2 COMPLETE ==============="
+echo ""
+
+echo "✅✅✅ VLA FULL TRAINING PIPELINE FINISHED ✅✅✅"
