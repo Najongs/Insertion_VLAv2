@@ -46,9 +46,6 @@ import struct
 
 # Import VLA model
 import sys
-sys.path.append(str(Path(__file__).parent.parent))
-from models.model_with_sensor import Not_freeze_QwenVLAWithSensor
-
 
 # ==============================
 # Configuration
