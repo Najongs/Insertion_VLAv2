@@ -21,7 +21,7 @@ Data Sources:
 
 Usage:
     # Standard async inference (recommended)
-    python Async_inference_receiver.py --checkpoint checkpoints/qwen_vla_sensor_best.pt
+    python Async_inference_receiver.py --checkpoint checkpoints/flow_matching_best.pt.pt --auto-start
 
     # Save data for debugging
     python Async_inference_receiver.py --checkpoint checkpoints/qwen_vla_sensor_best.pt --save-data
@@ -567,11 +567,24 @@ class AsyncVLAInferenceEngine:
     - Action Thread: Predicts actions at 10Hz using cached VL features
     - VL features reused 4x before update
     """
-    def __init__(self, config: Config, checkpoint_path: str = None, performance_monitor: PerformanceMonitor = None, verbose: bool = False):
+    def __init__(self, config: Config, checkpoint_path: str = None, performance_monitor: PerformanceMonitor = None, verbose: bool = False, task_name: str = "eye"):
         self.config = config
         self.device = torch.device(config.DEVICE)
         self.performance_monitor = performance_monitor
         self.verbose = verbose
+        self.task_name = task_name
+
+        # Generate instruction prompt (same format as training dataset)
+        self.text_prompt = (
+            f"You are an expert robot operator for a delicate insertion task. "
+            f"Your goal is to guide the robot to insert its tool into the '{task_name}' target. "
+            f"Analyze the image and determine the next action. "
+            f"Output your analysis in this format: "
+            f"1) Target Analysis: [FULLY_VISIBLE/PARTIALLY_VISIBLE/NOT_VISIBLE], [FAR/MID/NEAR/TOUCHING]. "
+            f"2) Current State: [Briefly describe the tool-target relationship]. "
+            f"3) Next Action: [Choose ONE: MOVE_FORWARD, MOVE_BACKWARD, MOVE_LEFT, MOVE_RIGHT, MOVE_UP, MOVE_DOWN, ROTATE_CW, ROTATE_CCW, ALIGN_TARGET, INSERT, STOP]. "
+            f"4) Confidence: [HIGH/MEDIUM/LOW]."
+        )
 
         print(f"\n{'='*80}")
         print(f"Initializing Async VLA Inference Engine")
@@ -579,6 +592,8 @@ class AsyncVLAInferenceEngine:
         print(f"Device: {self.device}")
         print(f"Model: {config.MODEL_NAME}")
         print(f"Model Type: {config.MODEL_TYPE}")
+        print(f"Task Name: {task_name}")
+        print(f"Text Prompt: {self.text_prompt[:100]}...")  # Show first 100 chars
         print(f"Image Resize: {config.IMAGE_RESIZE_WIDTH}x{config.IMAGE_RESIZE_HEIGHT}")
         print(f"Sensor Window: {config.SENSOR_TEMPORAL_LENGTH} samples (100ms @ 650Hz)")
         print(f"Robot State: {config.ROBOT_STATE_ENABLED}")
@@ -642,15 +657,16 @@ class AsyncVLAInferenceEngine:
         print(f"{'='*80}\n")
 
     @torch.no_grad()
-    def update_vl_features(self, images_dict: dict, text_prompt: str = "Perform needle insertion into the eye"):
+    def update_vl_features(self, images_dict: dict):
         """
         Update VL features (runs in background thread)
         This is the slow operation (~381ms with 5 views @ 640x360)
+        Uses self.text_prompt generated from task_name
         """
         start_time = time.time()
         if self.verbose:
             print(f"[VL] Encoding {len(images_dict)} views...")
-        
+
         # Save images temporarily
         temp_dir = Path("/tmp/vla_inference")
         temp_dir.mkdir(exist_ok=True)
@@ -664,7 +680,7 @@ class AsyncVLAInferenceEngine:
             image_paths.append(str(temp_path))
 
         # Extract VL features only
-        text_inputs = [text_prompt]
+        text_inputs = [self.text_prompt]
         image_inputs = [image_paths]
 
         t_encode_start = time.time()
@@ -1032,8 +1048,10 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging for debugging.")
     parser.add_argument('--robot-ip', type=str, default='10.130.41.111', help='IP address of the robot state publisher (robot_command_receiver.py).')
     parser.add_argument('--auto-start', action='store_true', help='Automatically send START command to robot before inference')
-    parser.add_argument('--start-joints', type=float, nargs=6, default=[0, 0, 0, 0, 0, 0],
+    parser.add_argument('--start-joints', type=float, nargs=6, default=[190, 2, 308, 0, 90, 0],
                        help='Start joint positions for auto-start (default: [0,0,0,0,0,0])')
+    parser.add_argument('--task-name', type=str, default='eye',
+                       help='Task name for prompt generation (e.g., eye, yellow_point, blue_point)')
     args = parser.parse_args()
 
     config = Config()
@@ -1104,7 +1122,7 @@ def main():
     )
 
     # Initialize inference engine
-    inference_engine = AsyncVLAInferenceEngine(config, args.checkpoint, performance_monitor, verbose=args.verbose)
+    inference_engine = AsyncVLAInferenceEngine(config, args.checkpoint, performance_monitor, verbose=args.verbose, task_name=args.task_name)
 
     # ZMQ Setup
     ctx = zmq.Context.instance()
