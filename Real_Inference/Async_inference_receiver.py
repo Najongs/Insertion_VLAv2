@@ -242,7 +242,7 @@ class Config:
     ACTION_DIM = 7  # 6 joints + 1 gripper
     HORIZON = 8  # Action prediction horizon
     HIDDEN_DIM = 1024
-    CACHE_DIR = "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features"
+    CACHE_DIR = str(Path(__file__).resolve().parent.parent / "cache" / "qwen_vl_features")
 
     # 🔥 OPTIMIZED: Image resize for faster VLM inference
     IMAGE_RESIZE_HEIGHT = 360
@@ -268,6 +268,8 @@ class Config:
     ZMQ_ROBOT_PUB_ADDRESS = "10.130.41.111"
     ZMQ_ROBOT_PUB_PORT = 5556
     ZMQ_ROBOT_TOPIC = b"robot_state"
+    ZMQ_CMD_PUSH_ADDRESS = "127.0.0.1"  # Assuming robot_command_receiver is on the same machine
+    ZMQ_CMD_PUSH_PORT = 5000           # The port robot_command_receiver listens on
     SENSOR_UDP_PORT = 9999
     SENSOR_UDP_IP = "0.0.0.0"
     SENSOR_BUFFER_SIZE = 4 * 1024 * 1024
@@ -610,7 +612,8 @@ class AsyncVLAInferenceEngine:
         This is the slow operation (~381ms with 5 views @ 640x360)
         """
         start_time = time.time()
-        print(f"\n[PROFILE][VLM] Start at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+        if args.verbose:
+            print(f"[VL] Encoding {len(images_dict)} views...")
         
         # Save images temporarily
         temp_dir = Path("/tmp/vla_inference")
@@ -640,10 +643,10 @@ class AsyncVLAInferenceEngine:
             )
         t_encode_end = time.time()
         encode_time = (t_encode_end - t_encode_start) * 1000
-        print(f"[PROFILE][Encoder] Vision/Text encoding took {encode_time:.1f} ms")
+        if args.verbose:
+            print(f"[VL] Vision/Text encoding took {encode_time:.1f} ms")
 
         elapsed = (time.time() - start_time) * 1000
-        print(f"[PROFILE][VLM] Total update took {elapsed:.1f} ms")
         self.vl_update_times.append(elapsed / 1000)
 
         # Update cache
@@ -783,11 +786,12 @@ class AsyncVLAInferenceEngine:
             )
             self.performance_monitor.add_timing(timing_record)
 
-        print(f"\n[PROFILE][Action] Start #{self.action_count+1} at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-        print(f"[PROFILE][SensorEncoder] {timings.get('sensor_encoding', 0):.1f} ms")
-        print(f"[PROFILE][RobotEncoder] {timings.get('robot_encoding', 0):.1f} ms")
-        print(f"[PROFILE][ActionExpert] {timings.get('action_prediction', 0):.1f} ms")
-        print(f"[PROFILE][ActionTotal] {timings.get('total', 0):.1f} ms\n")
+        if args.verbose:
+            print(f"[INFER] VLM Features       : Used update #{current_vl_update_number}")
+            print(f"[INFER] Sensor Encoding    : {timings.get('sensor_encoding', 0):.1f} ms")
+            print(f"[INFER] Robot State Encoding : {timings.get('robot_encoding', 0):.1f} ms")
+            print(f"[INFER] Action Prediction  : {timings.get('action_prediction', 0):.1f} ms")
+            print(f"[INFER] Total Inference Time : {timings.get('total', 0):.1f} ms")
 
         return {
             'actions': pred_actions[0].float().cpu().numpy(),  # (H, action_dim)
@@ -987,9 +991,12 @@ def main():
                        help='Model type: flow_matching or regression (default: flow_matching)')
     parser.add_argument('--flow-steps', type=int, default=10,
                        help='ODE integration steps for flow matching (default: 10)')
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging for debugging.")
+    parser.add_argument('--robot-ip', type=str, default='127.0.0.1', help='IP address of the robot state publisher (robot_command_receiver.py).')
     args = parser.parse_args()
 
     config = Config()
+    config.ZMQ_ROBOT_PUB_ADDRESS = args.robot_ip  # Set robot IP from args
     config.VLM_REUSE_COUNT = args.vl_reuse
     config.MODEL_TYPE = args.model_type
     config.FLOW_STEPS = args.flow_steps
@@ -1074,6 +1081,11 @@ def main():
     robot_sock.subscribe(config.ZMQ_ROBOT_TOPIC)
     print(f"✅ Robot SUB connected to {config.ZMQ_ROBOT_PUB_ADDRESS}:{config.ZMQ_ROBOT_PUB_PORT}")
 
+    # Robot Command socket (PUSH)
+    cmd_sock = ctx.socket(zmq.PUSH)
+    cmd_sock.connect(f"tcp://{config.ZMQ_CMD_PUSH_ADDRESS}:{config.ZMQ_CMD_PUSH_PORT}")
+    print(f"✅ Robot Command PUSH connected to {config.ZMQ_CMD_PUSH_ADDRESS}:{config.ZMQ_CMD_PUSH_PORT}")
+
     # Poller
     poller = zmq.Poller()
     poller.register(cam_sock, zmq.POLLIN)
@@ -1149,9 +1161,11 @@ def main():
 
                         cam_name = meta.get("camera", "unknown")
                         timestamp = float(meta.get("timestamp", 0.0))
-                        recv_time = time.time()
-                        net_delay = (recv_time - timestamp) * 1000  # ms 단위
-                        print(f"[NET][Camera] {cam_name} delay: {net_delay:.1f} ms")
+                        
+                        if args.verbose:
+                            recv_time = time.time()
+                            net_delay = (recv_time - timestamp) * 1000  # ms 단위
+                            print(f"[RECV] Camera: {cam_name} at ts {timestamp:.3f} (delay: {net_delay:.1f}ms)")
                             
                         # Decode image
                         img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
@@ -1196,6 +1210,9 @@ def main():
                         unpacked = struct.unpack(config.ROBOT_PAYLOAD_FORMAT, payload)
                         origin_ts, send_ts, force = unpacked[0:3]
 
+                        if args.verbose:
+                            print(f"[RECV] Robot state at ts {origin_ts:.3f} (J1: {unpacked[3]:.2f}, Px: {unpacked[9]:.2f})")
+
                         joints = np.array(unpacked[3:9], dtype=np.float32)  # 6 joints
                         pose = np.array(unpacked[9:15], dtype=np.float32)   # 6 poses
 
@@ -1232,12 +1249,13 @@ def main():
                     if vl_update_thread is None or not vl_update_thread.is_alive():
                         # Start new VL update in background
                         images_dict = image_buffer.get_multi_view_set()
+                        print(f"\n[VL] Starting background VL feature update #{current_vl_update_number + 1}...")
 
                         def vl_update_worker():
                             nonlocal current_vl_update_number
                             elapsed = inference_engine.update_vl_features(images_dict)
                             current_vl_update_number += 1
-                            print(f"🔄 [VL Update #{current_vl_update_number}] Completed in {elapsed*1000:.0f}ms")
+                            print(f"✅ [VL] Update #{current_vl_update_number} complete in {elapsed*1000:.0f}ms.")
 
                         vl_update_thread = threading.Thread(target=vl_update_worker, daemon=True)
                         vl_update_thread.start()
@@ -1255,6 +1273,8 @@ def main():
                 )
 
                 if data_ready:
+                    if args.verbose:
+                        print(f"[INFER] Preparing to run inference #{len(inference_results) + 1}...")
                     # Get sensor data
                     sensor_tensor = sensor_buffer.get_tensor()
 
@@ -1274,12 +1294,8 @@ def main():
                         vl_update_counter += 1
 
                         # Log action prediction
-                        print(f"[ACTION #{len(inference_results)+1}] "
-                              f"VL_reuse={vl_update_counter}/{config.VLM_REUSE_COUNT} | "
-                              f"Actions[0]: [{result['actions'][0][0]:.3f}, {result['actions'][0][1]:.3f}, {result['actions'][0][2]:.3f}, ...] | "
-                              f"Time: {result['inference_time']*1000:.1f}ms | "
-                              f"Sensor: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH} | "
-                              f"Robot: {robot_state_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
+                        if not args.verbose:
+                            print(f"[INFER] Action #{len(inference_results)+1} | VL_reuse={vl_update_counter}/{config.VLM_REUSE_COUNT} | Time: {result['inference_time']*1000:.1f}ms")
 
                         # Save result
                         inference_results.append({
@@ -1294,6 +1310,29 @@ def main():
                                 'timestamp': robot_state['timestamp']
                             } if robot_state else None
                         })
+
+                        # === SEND ACTION TO ROBOT CONTROLLER ===
+                        # Use the first action from the horizon
+                        action_to_send = result['actions'][0]
+                        
+                        # The model outputs 7D action (6-DoF + gripper)
+                        # We send the 6-DoF delta pose to the robot receiver
+                        delta_pose = action_to_send[:6].tolist()
+
+                        # Format the command
+                        robot_cmd = {
+                            "cmd": "dpose",
+                            "dp": delta_pose
+                        }
+                        
+                        try:
+                            cmd_sock.send_json(robot_cmd, zmq.DONTWAIT)
+                            if args.verbose:
+                                print(f"[ACTION] Sent dpose: [{delta_pose[0]:.3f}, {delta_pose[1]:.3f}, ...]")
+                        except zmq.Again:
+                            print("⚠️ [ACTION] Robot command socket busy, command dropped.")
+                        except Exception as e:
+                            print(f"💥 [ACTION] Error sending robot command: {e}")
 
                     last_action_time = now
 
@@ -1394,6 +1433,7 @@ def main():
         # Cleanup sockets
         cam_sock.close()
         robot_sock.close()
+        cmd_sock.close()
         ctx.term()
 
         print("✅ Shutdown complete")
