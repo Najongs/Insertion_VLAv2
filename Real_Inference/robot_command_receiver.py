@@ -448,6 +448,8 @@ def main():
     cmd_sock.bind(f"tcp://*:{LISTEN_PORT}")
     print(f"✅ [SYSTEM] Waiting for inference commands on port {LISTEN_PORT}...")
 
+    dpose_recv_count = 0
+
     try:
         while not _stop_flag.is_set():
             try:
@@ -514,6 +516,10 @@ def main():
                 _dpose_enabled = True # dpose 루프 시작
 
             elif cmd == "dpose":
+                dpose_recv_count += 1
+                if dpose_recv_count % 10 == 0: # Print every 10 actions
+                    print(f"✅ [CMD] Received action #{dpose_recv_count}.")
+
                 if not _started or not _dpose_enabled: # apose 중에는 dpose 무시
                     continue
                 dp = msg.get("dp", [0, 0, 0, 0, 0, 0])
