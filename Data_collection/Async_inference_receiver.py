@@ -76,6 +76,7 @@ class Config:
     ZMQ_ROBOT_PUB_ADDRESS = "10.130.41.111"
     ZMQ_ROBOT_PUB_PORT = 5556
     ZMQ_ROBOT_TOPIC = b"robot_state"
+    ZMQ_END_TOPIC = b"episode_end"
     SENSOR_UDP_PORT = 9999
     SENSOR_UDP_IP = "0.0.0.0"
     SENSOR_BUFFER_SIZE = 4 * 1024 * 1024
@@ -443,6 +444,15 @@ class AsyncVLAInferenceEngine:
                 'vl_features_cached': self.vl_features is not None
             }
 
+    def reset_stats(self):
+        """Resets inference statistics for a new episode."""
+        with self.stats_lock:
+            self.vl_update_count = 0
+            self.vl_update_times.clear()
+            self.action_count = 0
+            self.action_times.clear()
+        print("📈 Inference engine stats reset.")
+
 
 # ==============================
 # UDP Sensor Receiver
@@ -543,73 +553,70 @@ class SensorUDPReceiver(threading.Thread):
 # ==============================
 # Data Saving Functions
 # ==============================
-def save_robot_data_to_csv(data_list, filepath):
-    """Save robot data to CSV"""
-    if not data_list:
+def save_episode_data(args, output_dir, session_time, robot_save_buffer, sensor_save_buffer, image_writer, inference_results, inference_engine):
+    """Saves all data for a completed episode."""
+    if not output_dir:
+        print("Output directory not set, skipping save.")
         return
 
-    print(f"💾 Saving {len(data_list)} robot states to {filepath}")
-    try:
-        with open(filepath, 'w', newline='', encoding='utf-8') as f:
-            w = csv.writer(f)
-            w.writerow([
-                "recv_timestamp", "origin_timestamp", "send_timestamp", "force_placeholder",
-                "joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6",
-                "pose_x", "pose_y", "pose_z", "pose_a", "pose_b", "pose_r"
-            ])
-            w.writerows(data_list)
-        print(f"💾✅ Robot data saved successfully.")
-    except Exception as e:
-        print(f"[ERROR] Failed to save robot data: {e}")
-
-
-def save_sensor_data_to_npz(data_list, filepath):
-    """Save sensor data to NPZ"""
-    if not data_list:
+    if not any([robot_save_buffer, sensor_save_buffer, inference_results]):
+        print("No data collected in this episode, skipping save.")
+        if image_writer:
+            image_writer.stop()
+            image_writer.join()
         return
 
-    print(f"💾 Saving {len(data_list)} sensor records to {filepath}")
-    try:
-        timestamps = np.array([d['timestamp'] for d in data_list], dtype=np.float64)
-        send_timestamps = np.array([d['send_timestamp'] for d in data_list], dtype=np.float64)
-        forces = np.array([d['force'] for d in data_list], dtype=np.float32)
-        alines = np.array([d['aline'] for d in data_list], dtype=np.float32)
+    print(f"\n{'='*80}")
+    print(f"Saving data for episode {session_time}")
+    print(f"{'='*80}\n")
 
-        np.savez(filepath, timestamps=timestamps, send_timestamps=send_timestamps,
-                forces=forces, alines=alines)
-        print(f"💾✅ Sensor data saved successfully.")
-    except Exception as e:
-        print(f"[ERROR] Failed to save sensor data: {e}")
+    num_robot_states = len(robot_save_buffer) if robot_save_buffer else 0
+    num_sensor_records = len(sensor_save_buffer) if sensor_save_buffer else 0
+    num_inference_results = len(inference_results) if inference_results else 0
+    num_images_written = 0
 
+    # Save all data
+    if args.save_data:
+        # Save robot data
+        if robot_save_buffer:
+            robot_csv = output_dir / f"robot_state_{session_time}.csv"
+            save_robot_data_to_csv(robot_save_buffer, str(robot_csv))
 
-def save_inference_results(results_list, filepath):
-    """Save inference results to JSON"""
-    if not results_list:
-        return
+        # Save sensor data
+        if sensor_save_buffer:
+            sensor_npz = output_dir / f"sensor_data_{session_time}.npz"
+            save_sensor_data_to_npz(sensor_save_buffer, str(sensor_npz))
 
-    print(f"💾 Saving {len(results_list)} inference results to {filepath}")
-    try:
-        # Convert numpy arrays to lists for JSON serialization
-        serializable_results = []
-        for result in results_list:
-            serializable_results.append({
-                'timestamp': result['timestamp'],
-                'actions': result['actions'].tolist() if isinstance(result['actions'], np.ndarray) else result['actions'],
-                'delta': result['delta'].tolist() if isinstance(result['delta'], np.ndarray) else result['delta'],
-                'inference_time': result['inference_time'],
-                'vl_update_number': result.get('vl_update_number', 0),
-                'robot_state': result.get('robot_state')
-            })
+        # Stop image writer
+        if image_writer:
+            image_writer.stop()
+            image_writer.join()
+            num_images_written = image_writer.written_count
 
-        with open(filepath, 'w') as f:
-            json.dump(serializable_results, f, indent=2)
-        print(f"💾✅ Inference results saved successfully.")
-    except Exception as e:
-        print(f"[ERROR] Failed to save inference results: {e}")
+    # Save inference results
+    if inference_results:
+        inference_json = output_dir / f"inference_results_{session_time}.json"
+        save_inference_results(inference_results, str(inference_json))
+
+    # Print final stats
+    stats = inference_engine.get_stats()
+    print(f"\n--- Episode {session_time} Statistics ---")
+    print(f"VL Updates: {stats['vl_update_count']}")
+    if stats['vl_avg_time_ms'] > 0:
+        print(f"VL Avg Time: {stats['vl_avg_time_ms']:.1f}ms (~{1000/stats['vl_avg_time_ms']:.1f}Hz)")
+    print(f"Action Predictions: {stats['action_count']}")
+    if stats['action_avg_time_ms'] > 0:
+        print(f"Action Avg Time: {stats['action_avg_time_ms']:.1f}ms (~{1000/stats['action_avg_time_ms']:.1f}Hz)")
+
+    if args.save_data:
+        print(f"\nData saved: Images: {num_images_written}, Robot states: {num_robot_states}, Sensor records: {num_sensor_records}")
+    print(f"Inference results: {num_inference_results}")
+    print(f"\n📁 Output directory: {output_dir}")
+    print(f"{'='*80}\n")
 
 
 # =======================================================================================
-# Main Async Inference Loop
+# Main Loop for Multi-Episode Collection
 # =======================================================================================
 def main():
     parser = argparse.ArgumentParser(description='Async Real-time VLA Inference Receiver')
@@ -621,353 +628,191 @@ def main():
     config = Config()
     config.VLM_REUSE_COUNT = args.vl_reuse
 
-    # Setup output directory
-    session_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(f"./async_inference_{session_time}")
-    output_dir.mkdir(exist_ok=True)
-
-    # Create subdirectories if saving data
-    image_writer = None
-    sensor_save_buffer = None
-    robot_save_buffer = None
-
-    if args.save_data:
-        print(f"\n{'='*80}")
-        print(f"📁 Data saving enabled: {output_dir}")
-        print(f"{'='*80}\n")
-
-        # Create view directories
-        for view in ['View1', 'View2', 'View3', 'View4', 'View5']:
-            (output_dir / view).mkdir(exist_ok=True)
-
-        # Initialize image writer
-        image_writer = AsyncImageWriter(max_queue=5000)
-        image_writer.start()
-
-        # Initialize save buffers
-        sensor_save_buffer = []
-        robot_save_buffer = []
-    else:
-        print(f"\n{'='*80}")
-        print(f"📁 Inference only mode (no data saving)")
-        print(f"📁 Results will be saved to: {output_dir}")
-        print(f"{'='*80}\n")
-
-    # Initialize components
+    # --- One-time setup ---
     stop_event = threading.Event()
-    image_buffer = MultiViewImageBuffer(
-        save_dir=str(output_dir) if args.save_data else None,
-        writer=image_writer,
-        resize_height=config.IMAGE_RESIZE_HEIGHT,
-        resize_width=config.IMAGE_RESIZE_WIDTH
-    )
-    sensor_buffer = SensorCircularBuffer(
-        max_length=config.SENSOR_TEMPORAL_LENGTH,
-        channels=config.SENSOR_INPUT_CHANNELS,
-        save_buffer=sensor_save_buffer
-    )
+    def sigint_handler(sig, frame):
+        print("\n🛑 Ctrl+C detected — Shutting down...")
+        stop_event.set()
+    signal.signal(signal.SIGINT, sigint_handler)
 
-    # Initialize inference engine
     inference_engine = AsyncVLAInferenceEngine(config, args.checkpoint)
 
-    # ZMQ Setup
     ctx = zmq.Context.instance()
-
-    # Camera socket
     cam_sock = ctx.socket(zmq.PULL)
     cam_sock.setsockopt(zmq.RCVHWM, 5000)
     cam_sock.setsockopt(zmq.RCVBUF, 8 * 1024 * 1024)
     cam_sock.bind(f"tcp://0.0.0.0:{config.ZMQ_CAM_PULL_PORT}")
     print(f"✅ Camera PULL listening on port {config.ZMQ_CAM_PULL_PORT}")
 
-    # Robot socket
     robot_sock = ctx.socket(zmq.SUB)
     robot_sock.setsockopt(zmq.RCVHWM, 100)
     robot_sock.connect(f"tcp://{config.ZMQ_ROBOT_PUB_ADDRESS}:{config.ZMQ_ROBOT_PUB_PORT}")
     robot_sock.subscribe(config.ZMQ_ROBOT_TOPIC)
+    robot_sock.subscribe(config.ZMQ_END_TOPIC)
     print(f"✅ Robot SUB connected to {config.ZMQ_ROBOT_PUB_ADDRESS}:{config.ZMQ_ROBOT_PUB_PORT}")
 
-    # Poller
     poller = zmq.Poller()
     poller.register(cam_sock, zmq.POLLIN)
     poller.register(robot_sock, zmq.POLLIN)
 
-    # Start sensor receiver
+    image_buffer = MultiViewImageBuffer(
+        resize_height=config.IMAGE_RESIZE_HEIGHT,
+        resize_width=config.IMAGE_RESIZE_WIDTH
+    )
+    sensor_buffer = SensorCircularBuffer(
+        max_length=config.SENSOR_TEMPORAL_LENGTH,
+        channels=config.SENSOR_INPUT_CHANNELS
+    )
     sensor_thread = SensorUDPReceiver(config, sensor_buffer, stop_event)
     sensor_thread.start()
 
-    # State tracking
-    robot_state = None
-    cam_recv_count = defaultdict(int)
-    inference_results = []
-
-    # Async VL update tracking
-    vl_update_counter = 0
-    last_vl_update_time = 0
-    vl_update_thread = None
-    current_vl_update_number = 0
-
-    # Action prediction tracking
-    last_action_time = time.time()
-    action_period = 1.0 / config.ACTION_EXPERT_HZ  # 0.1s for 10Hz
-    last_status_print = time.time()
-
-    # Signal handler
-    def sigint_handler(sig, frame):
-        print("\n🛑 Ctrl+C detected — Shutting down...")
-        stop_event.set()
-
-    signal.signal(signal.SIGINT, sigint_handler)
+    # --- Episode State ---
+    collecting = False
+    session_time, output_dir = None, None
+    image_writer, sensor_save_buffer, robot_save_buffer, inference_results = None, None, None, None
+    cam_recv_count, robot_state, vl_update_thread = None, None, None
+    vl_update_counter, current_vl_update_number = 0, 0
+    last_action_time, last_status_print = time.time(), time.time()
 
     print(f"\n{'='*80}")
     print(f"Async Real-time Inference Started")
+    print(f"Ready to receive multiple episodes. Press Ctrl+C to stop.")
     print(f"{'='*80}")
-    print(f"Action Expert: {config.ACTION_EXPERT_HZ} Hz (every {action_period*1000:.0f}ms)")
-    print(f"VL Update: ~2.6 Hz (VL features reused {config.VLM_REUSE_COUNT}x)")
-    print(f"Image Resolution: {config.IMAGE_RESIZE_WIDTH}x{config.IMAGE_RESIZE_HEIGHT}")
-    print(f"Sensor Window: {config.SENSOR_TEMPORAL_LENGTH} samples (100ms)")
-    print(f"Device: {config.DEVICE}")
-    print(f"Data Saving: {'Enabled' if args.save_data else 'Disabled'}")
-    print(f"\nWaiting for data from all sources...")
-    print(f"Press Ctrl+C to stop\n")
+    print(f"\n--- Waiting for new episode... ---")
 
     try:
         while not stop_event.is_set():
-            # Poll for messages (non-blocking)
             try:
-                socks = dict(poller.poll(timeout=10))
+                socks = dict(poller.poll(timeout=100))
             except KeyboardInterrupt:
                 break
-            except Exception as e:
-                print(f"[WARN] Poller error: {e}")
-                time.sleep(0.01)
-                continue
 
-            now = time.time()
-
-            # Process camera messages
+            # Always process camera messages to keep buffer fresh
             if cam_sock in socks and socks[cam_sock] == zmq.POLLIN:
                 while True:
                     try:
                         parts = cam_sock.recv_multipart(zmq.DONTWAIT)
-                        if len(parts) < 2:
-                            continue
+                        if len(parts) < 2: continue
+                        meta = json.loads(parts[0].decode("utf-8"))
+                        img = cv2.imdecode(np.frombuffer(parts[1], np.uint8), cv2.IMREAD_COLOR)
+                        if img is None: continue
 
-                        meta_raw, jpg = parts[0], parts[1]
-                        meta = json.loads(meta_raw.decode("utf-8"))
-
-                        cam_name = meta.get("camera", "unknown")
-                        timestamp = float(meta.get("timestamp", 0.0))
-
-                        # Decode image
-                        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
-                        if img is None:
-                            continue
-
-                        # Determine view name
-                        view_name = None
-                        cam_lower = cam_name.lower()
-
-                        if "left" in cam_lower:
+                        view_name, cam_name = None, meta.get("camera", "unknown")
+                        if "left" in cam_name.lower():
                             for serial, view in config.ZED_SERIAL_TO_VIEW.items():
-                                if serial in cam_name:
-                                    view_name = view
-                                    break
-
-                        if config.OAK_KEYWORD.lower() in cam_lower:
-                            view_name = "View5"
+                                if serial in cam_name: view_name = view; break
+                        if config.OAK_KEYWORD.lower() in cam_name.lower(): view_name = "View5"
 
                         if view_name:
-                            image_buffer.update(view_name, img, timestamp, cam_name)
-                            cam_recv_count[view_name] += 1
+                            image_buffer.update(view_name, img, float(meta.get("timestamp", 0.0)), cam_name)
+                            if collecting: cam_recv_count[view_name] += 1
+                    except zmq.Again: break
+                    except Exception as e: print(f"[ERROR] Camera processing: {e}"); break
 
-                    except zmq.Again:
-                        break
-                    except Exception as e:
-                        print(f"[ERROR] Camera processing: {e}")
-                        break
-
-            # Process robot messages
+            # Process robot messages (state and episode control)
             if robot_sock in socks and socks[robot_sock] == zmq.POLLIN:
                 while True:
                     try:
                         parts = robot_sock.recv_multipart(zmq.DONTWAIT)
-                        if len(parts) != 2:
-                            continue
-
+                        if len(parts) != 2: continue
                         topic, payload = parts[0], parts[1]
-                        if len(payload) != config.ROBOT_PAYLOAD_SIZE:
-                            continue
 
-                        unpacked = struct.unpack(config.ROBOT_PAYLOAD_FORMAT, payload)
-                        origin_ts, send_ts, force = unpacked[0:3]
-                        joints, pose = unpacked[3:9], unpacked[9:15]
+                        if topic == config.ZMQ_ROBOT_TOPIC:
+                            if not collecting:
+                                # === START OF A NEW EPISODE ===
+                                collecting = True
+                                print("\n" + "="*80 + "\n🏁 NEW EPISODE STARTED 🏁\n" + "="*80)
+                                session_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                output_dir = Path(f"./async_inference_{session_time}")
+                                output_dir.mkdir(exist_ok=True)
 
-                        robot_state = {
-                            'timestamp': origin_ts,
-                            'joints': np.array(joints),
-                            'pose': np.array(pose),
-                            'recv_time': now
-                        }
+                                robot_save_buffer, sensor_save_buffer, inference_results = [], [], []
+                                cam_recv_count = defaultdict(int)
+                                vl_update_counter, current_vl_update_number = 0, 0
+                                last_action_time, last_status_print = time.time(), time.time()
+                                inference_engine.reset_stats()
 
-                        # Save robot data if enabled
-                        if args.save_data:
-                            robot_save_buffer.append([now] + list(unpacked))
+                                if args.save_data:
+                                    print(f"📁 Data saving enabled: {output_dir}")
+                                    for view in ['View1', 'View2', 'View3', 'View4', 'View5']:
+                                        (output_dir / view).mkdir(exist_ok=True)
+                                    image_writer = AsyncImageWriter(max_queue=5000); image_writer.start()
+                                else:
+                                    print(f"📁 Inference only mode (no data saving)"); image_writer = None
+                                
+                                image_buffer.writer = image_writer
+                                image_buffer.save_dir = str(output_dir) if args.save_data else None
+                                image_buffer.save_enabled = args.save_data and image_writer is not None
+                                sensor_buffer.save_buffer = sensor_save_buffer
 
-                    except zmq.Again:
-                        break
-                    except Exception as e:
-                        print(f"[ERROR] Robot processing: {e}")
-                        break
+                            # Process robot state
+                            unpacked = struct.unpack(config.ROBOT_PAYLOAD_FORMAT, payload)
+                            robot_state = {'timestamp': unpacked[0], 'joints': np.array(unpacked[3:9]), 'pose': np.array(unpacked[9:15]), 'recv_time': time.time()}
+                            if args.save_data: robot_save_buffer.append([time.time()] + list(unpacked))
 
+                        elif topic == config.ZMQ_END_TOPIC:
+                            if collecting:
+                                # === END OF EPISODE ===
+                                print("\n" + "="*80 + "\n🏁 EPISODE FINISHED 🏁")
+                                save_episode_data(args, output_dir, session_time, robot_save_buffer, sensor_save_buffer, image_writer, inference_results, inference_engine)
+                                collecting = False
+                                print("\n--- Waiting for new episode... ---")
+
+                    except zmq.Again: break
+                    except Exception as e: print(f"[ERROR] Robot processing: {e}"); break
+            
+            if not collecting:
+                time.sleep(0.1) # Sleep briefly when not collecting
+                continue
+
+            now = time.time()
             # === ASYNC VLM UPDATE (Background Thread) ===
-            # Start VL update if:
-            # 1. Enough time has passed OR first update
-            # 2. Previous update thread is done (or None)
-            # 3. Data is ready
             if image_buffer.is_ready():
                 should_update_vl = (vl_update_counter % config.VLM_REUSE_COUNT == 0) or (inference_engine.vl_features is None)
-
-                if should_update_vl:
-                    # Check if previous VL update thread is done
-                    if vl_update_thread is None or not vl_update_thread.is_alive():
-                        # Start new VL update in background
-                        images_dict = image_buffer.get_multi_view_set()
-
-                        def vl_update_worker():
-                            nonlocal current_vl_update_number
-                            elapsed = inference_engine.update_vl_features(images_dict)
-                            current_vl_update_number += 1
-                            print(f"🔄 [VL Update #{current_vl_update_number}] Completed in {elapsed*1000:.0f}ms")
-
-                        vl_update_thread = threading.Thread(target=vl_update_worker, daemon=True)
-                        vl_update_thread.start()
-                        vl_update_counter = 0
+                if should_update_vl and (vl_update_thread is None or not vl_update_thread.is_alive()):
+                    images_dict = image_buffer.get_multi_view_set()
+                    def vl_update_worker():
+                        nonlocal current_vl_update_number
+                        elapsed = inference_engine.update_vl_features(images_dict)
+                        current_vl_update_number += 1
+                        print(f"🔄 [VL Update #{current_vl_update_number}] Completed in {elapsed*1000:.0f}ms")
+                    vl_update_thread = threading.Thread(target=vl_update_worker, daemon=True); vl_update_thread.start()
+                    vl_update_counter = 0
 
             # === ACTION EXPERT PREDICTION (10Hz) ===
-            time_since_last_action = now - last_action_time
-
-            if time_since_last_action >= action_period:
+            if now - last_action_time >= (1.0 / config.ACTION_EXPERT_HZ):
                 if inference_engine.vl_features is not None and sensor_buffer.is_ready():
-                    # Get sensor data
-                    sensor_tensor = sensor_buffer.get_tensor()
-
-                    # Predict action (fast, ~20-30ms)
-                    result = inference_engine.predict_action(sensor_tensor)
-
+                    result = inference_engine.predict_action(sensor_buffer.get_tensor())
                     if result:
                         vl_update_counter += 1
-
-                        # Log action prediction
-                        print(f"[ACTION #{len(inference_results)+1}] "
-                              f"VL_reuse={vl_update_counter}/{config.VLM_REUSE_COUNT} | "
-                              f"Actions[0]: [{result['actions'][0][0]:.3f}, {result['actions'][0][1]:.3f}, {result['actions'][0][2]:.3f}, ...] | "
-                              f"Time: {result['inference_time']*1000:.1f}ms | "
-                              f"Sensor: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
-
-                        # Save result
-                        inference_results.append({
-                            'timestamp': result['timestamp'],
-                            'actions': result['actions'],
-                            'delta': result['delta'],
-                            'inference_time': result['inference_time'],
-                            'vl_update_number': current_vl_update_number,
-                            'robot_state': {
-                                'joints': robot_state['joints'].tolist(),
-                                'pose': robot_state['pose'].tolist(),
-                                'timestamp': robot_state['timestamp']
-                            } if robot_state else None
-                        })
-
+                        print(f"[ACTION #{len(inference_results)+1}] VL_reuse={vl_update_counter}/{config.VLM_REUSE_COUNT} | Time: {result['inference_time']*1000:.1f}ms")
+                        result.update({'vl_update_number': current_vl_update_number, 'robot_state': {'joints': robot_state['joints'].tolist(), 'pose': robot_state['pose'].tolist(), 'timestamp': robot_state['timestamp']} if robot_state else None})
+                        inference_results.append(result)
                     last_action_time = now
-
-                else:
-                    # Data not ready
-                    if time_since_last_action >= 2.0:  # Print warning every 2s
-                        print(f"[WAIT] VL Features: {inference_engine.vl_features is not None} | "
-                              f"Images: {image_buffer.is_ready()} ({len(image_buffer.latest_images)}/5) | "
-                              f"Sensor: {sensor_buffer.is_ready()} ({sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH})")
-                        last_action_time = now
+                elif now - last_action_time >= 2.0:
+                    print(f"[WAIT] VL Features: {inference_engine.vl_features is not None} | Images: {image_buffer.is_ready()} | Sensor: {sensor_buffer.is_ready()}")
+                    last_action_time = now
 
             # Status print
             if now - last_status_print >= config.STATUS_PERIOD:
                 stats = inference_engine.get_stats()
-
                 print(f"\n--- Status ({datetime.now().strftime('%H:%M:%S')}) ---")
-                print(f"VL Updates: {stats['vl_update_count']} | VL avg: {stats['vl_avg_time_ms']:.0f}ms")
-                print(f"Actions: {stats['action_count']} | Action avg: {stats['action_avg_time_ms']:.1f}ms")
-                print(f"Images recv: {', '.join([f'{v}:{cam_recv_count[v]}' for v in sorted(cam_recv_count.keys())])}")
-                print(f"Sensor buffer: {sensor_buffer.size()}/{config.SENSOR_TEMPORAL_LENGTH}")
-
-                if robot_state:
-                    print(f"Robot: J1={robot_state['joints'][0]:.2f}°, Px={robot_state['pose'][0]:.2f}mm")
-
-                if args.save_data and image_writer:
-                    print(f"Writer queue: {image_writer.q.qsize()} | Written: {image_writer.written_count}")
-
+                print(f"VL Updates: {stats['vl_update_count']} | Action Predictions: {stats['action_count']}")
+                if robot_state: print(f"Robot: J1={robot_state['joints'][0]:.2f}°, Px={robot_state['pose'][0]:.2f}mm")
+                if args.save_data and image_writer: print(f"Writer queue: {image_writer.q.qsize()} | Written: {image_writer.written_count}")
                 last_status_print = now
 
     finally:
-        print(f"\n{'='*80}")
-        print("Cleanup and Data Saving")
-        print(f"{'='*80}\n")
+        print(f"\n{'='*80}\nShutting down...")
+        if collecting:
+            print("An episode was running. Saving final data...")
+            save_episode_data(args, output_dir, session_time, robot_save_buffer, sensor_save_buffer, image_writer, inference_results, inference_engine)
+        
         stop_event.set()
-
-        # Wait for threads
-        print("⏳ Waiting for sensor thread...")
-        sensor_thread.join(timeout=2.0)
-
-        if vl_update_thread and vl_update_thread.is_alive():
-            print("⏳ Waiting for VL update thread...")
-            vl_update_thread.join(timeout=5.0)
-
-        # Save all data
-        if args.save_data:
-            # Save robot data
-            if robot_save_buffer:
-                robot_csv = output_dir / f"robot_state_{session_time}.csv"
-                save_robot_data_to_csv(robot_save_buffer, str(robot_csv))
-
-            # Save sensor data
-            if sensor_save_buffer:
-                sensor_npz = output_dir / f"sensor_data_{session_time}.npz"
-                save_sensor_data_to_npz(sensor_save_buffer, str(sensor_npz))
-
-            # Stop image writer
-            if image_writer:
-                image_writer.stop()
-                image_writer.join()
-
-        # Save inference results
-        if inference_results:
-            inference_json = output_dir / f"inference_results_{session_time}.json"
-            save_inference_results(inference_results, str(inference_json))
-
-        # Print final stats
-        stats = inference_engine.get_stats()
-        print(f"\n{'='*80}")
-        print("Final Statistics")
-        print(f"{'='*80}")
-        print(f"VL Updates: {stats['vl_update_count']}")
-        print(f"VL Avg Time: {stats['vl_avg_time_ms']:.1f}ms (~{1000/stats['vl_avg_time_ms']:.1f}Hz)")
-        print(f"Action Predictions: {stats['action_count']}")
-        print(f"Action Avg Time: {stats['action_avg_time_ms']:.1f}ms (~{1000/stats['action_avg_time_ms']:.1f}Hz)")
-
-        if args.save_data:
-            print(f"\nData saved:")
-            print(f"  Images: {image_writer.written_count if image_writer else 0}")
-            print(f"  Robot states: {len(robot_save_buffer) if robot_save_buffer else 0}")
-            print(f"  Sensor records: {len(sensor_save_buffer) if sensor_save_buffer else 0}")
-
-        print(f"  Inference results: {len(inference_results)}")
-        print(f"\n📁 Output directory: {output_dir}")
-        print(f"{'='*80}\n")
-
-        # Cleanup sockets
-        cam_sock.close()
-        robot_sock.close()
-        ctx.term()
-
+        if sensor_thread.is_alive(): sensor_thread.join(timeout=2.0)
+        if vl_update_thread and vl_update_thread.is_alive(): vl_update_thread.join(timeout=5.0)
+        
+        cam_sock.close(); robot_sock.close(); ctx.term()
         print("✅ Shutdown complete")
 
 

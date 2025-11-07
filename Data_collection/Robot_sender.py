@@ -27,6 +27,7 @@ ZMQ_PUB_ADDRESS = "*" # Bind to all interfaces on this machine
 ZMQ_PUB_PORT = 5556 # Choose a port for ZMQ
 SENDER_RATE_HZ = 100 # How often to send ZMQ messages
 ZMQ_TOPIC = b"robot_state" # Topic for subscribers to filter
+ZMQ_END_TOPIC = b"episode_end" # Topic to signal episode end
 
 # 데이터 포맷 (C++ receiver와 일치)
 # Format: <ddf12f
@@ -223,6 +224,15 @@ class ZmqPublisher(threading.Thread):
 
         finally: # Ensure cleanup happens
              print("🧹 Cleaning up ZMQ Publisher...")
+             # Send episode end signal
+             print(f"➡️ Sending episode end signal with topic '{ZMQ_END_TOPIC.decode()}'...")
+             try:
+                 self.socket.send_multipart([ZMQ_END_TOPIC, b'finished'], zmq.DONTWAIT)
+                 time.sleep(0.5) # Give a moment for message to be sent
+                 print("✅ Episode end signal sent.")
+             except Exception as e:
+                 print(f"[ZmqPublisher ERR] Could not send episode end signal: {e}")
+
              # ▼▼▼ [수정] Clean up dummy_sock ▼▼▼
              if dummy_sock:
                  # Check if registered before trying to unregister
