@@ -45,6 +45,29 @@ from vla_datasets.unified_dataset import UnifiedVLADataset
 from transformers import AutoProcessor
 
 
+def try_load_checkpoint(model: QwenVLAUnified, checkpoint_path: Optional[str], tag: str):
+    """Best-effort checkpoint loader that never crashes the benchmark."""
+    if not checkpoint_path:
+        return
+
+    ckpt = Path(checkpoint_path).expanduser()
+    if not ckpt.exists():
+        print(f"⚠️ {tag}: checkpoint not found at {ckpt}")
+        return
+
+    try:
+        payload = torch.load(ckpt, map_location='cpu')
+        state_dict = payload.get('model_state_dict', payload)
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        print(f"✅ Loaded {tag} checkpoint from {ckpt}")
+        if missing:
+            print(f"   · Missing keys ({len(missing)}): {missing[:5]}{'...' if len(missing) > 5 else ''}")
+        if unexpected:
+            print(f"   · Unexpected keys ({len(unexpected)}): {unexpected[:5]}{'...' if len(unexpected) > 5 else ''}")
+    except Exception as exc:
+        print(f"⚠️ {tag}: failed to load checkpoint ({exc})")
+
+
 @dataclass
 class BenchmarkConfig:
     """Benchmark configuration"""
@@ -489,6 +512,11 @@ def main():
     parser.add_argument('--dataset-dir', type=str,
                        default='/home/najo/NAS/VLA/dataset/New_dataset/Blue_point/episode_20251030_025856',
                        help='Path to test dataset')
+    parser.add_argument('--cache-root', type=str,
+                       default='./cache/qwen_vl_features',
+                       help='Writable cache root to avoid permission issues')
+    parser.add_argument('--use-cache', action='store_true',
+                       help='Enable VL cache loading during benchmark (default: disabled)')
     parser.add_argument('--sample-idx', type=int, default=0, help='Sample index to use')
 
     # Benchmark config
@@ -522,6 +550,9 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load dataset
+    cache_root = Path(args.cache_root).expanduser()
+    cache_root.mkdir(parents=True, exist_ok=True)
+
     print(f"Loading dataset from {args.dataset_dir}...")
     dataset = UnifiedVLADataset(
         data_dir=args.dataset_dir,
@@ -529,6 +560,8 @@ def main():
         horizon=8,
         vlm_reuse_count=1,  # No caching for real-time test
         sensor_window_size=65,
+        cache_root=str(cache_root),
+        use_cache=args.use_cache,
     )
 
     print(f"Dataset loaded: {len(dataset)} samples")
@@ -574,20 +607,7 @@ def main():
             device_map=None,
         )
 
-        # Load checkpoint (with compatibility handling)
-        # Note: We skip checkpoint loading for benchmarking as we only care about speed
-        # If you want to load checkpoint, ensure it was trained with same config
-        print(f"⚠️ Using randomly initialized model for benchmarking")
-        print(f"   (Checkpoint loading skipped - only speed matters for benchmarking)")
-
-        # Uncomment below to try loading checkpoint (may fail due to architecture changes)
-        # try:
-        #     ckpt = torch.load(args.checkpoint_regression, map_location='cpu')
-        #     model_reg.load_state_dict(ckpt['model_state_dict'], strict=False)
-        #     print(f"✅ Loaded checkpoint from {args.checkpoint_regression}")
-        # except Exception as e:
-        #     print(f"⚠️ Could not load checkpoint: {e}")
-
+        try_load_checkpoint(model_reg, args.checkpoint_regression, "Regression")
 
         benchmark_reg = ModelBenchmark(
             model_reg, processor, base_config, model_name="Regression"
@@ -627,19 +647,7 @@ def main():
             device_map=None,
         )
 
-        # Load checkpoint (with compatibility handling)
-        # Note: We skip checkpoint loading for benchmarking as we only care about speed
-        # If you want to load checkpoint, ensure it was trained with same config
-        print(f"⚠️ Using randomly initialized model for benchmarking")
-        print(f"   (Checkpoint loading skipped - only speed matters for benchmarking)")
-
-        # Uncomment below to try loading checkpoint (may fail due to architecture changes)
-        # try:
-        #     ckpt = torch.load(args.checkpoint_flow, map_location='cpu')
-        #     model_flow.load_state_dict(ckpt['model_state_dict'], strict=False)
-        #     print(f"✅ Loaded checkpoint from {args.checkpoint_flow}")
-        # except Exception as e:
-        #     print(f"⚠️ Could not load checkpoint: {e}")
+        try_load_checkpoint(model_flow, args.checkpoint_flow, "Flow Matching")
 
         benchmark_flow = ModelBenchmark(
             model_flow, processor, base_config, model_name="Flow Matching"

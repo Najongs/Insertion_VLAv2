@@ -79,14 +79,17 @@ def convert_all_episodes(dataset_root: Path):
         print(f"❌ Directory not found: {dataset_root}")
         return
 
-    # Find all robot_states.csv files
+    # Find all robot_states.csv or robot_state_*.csv files
     csv_files = list(dataset_root.rglob("robot_states.csv"))
+    if not csv_files:
+        csv_files = list(dataset_root.rglob("robot_state_*.csv"))
+
 
     if not csv_files:
-        print(f"⚠️  No robot_states.csv files found in {dataset_root}")
+        print(f"⚠️  No robot_states.csv or robot_state_*.csv files found in {dataset_root}")
         return
 
-    print(f"🔍 Found {len(csv_files)} robot_states.csv files")
+    print(f"🔍 Found {len(csv_files)} robot state csv files")
     print(f"📁 Converting in: {dataset_root}\n")
 
     success_count = 0

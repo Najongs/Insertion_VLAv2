@@ -27,6 +27,7 @@ from tqdm import tqdm
 import numpy as np
 import math
 from torch.optim.lr_scheduler import LambdaLR
+import random
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -78,6 +79,56 @@ class MAERobotStateModel(nn.Module):
         return reconstructed_sequence
 
 # =====================================
+# 1.5. Robot State Augmentation
+# =====================================
+
+class RobotStateAugmentation:
+    """
+    Robot state augmentation for MAE pre-training.
+    All augmentations have ≤30% probability.
+    """
+    def __init__(self,
+                 noise_std=0.005,
+                 joint_scale_range=(0.98, 1.02),
+                 pose_scale_range=(0.97, 1.03)):
+        self.noise_std = noise_std
+        self.joint_scale_range = joint_scale_range
+        self.pose_scale_range = pose_scale_range
+
+    def __call__(self, robot_states):
+        """
+        Args:
+            robot_states: (T, 12) - 6 joints + 6 poses
+        Returns:
+            Augmented robot states
+        """
+        augmented = robot_states.clone()
+
+        # 1. Gaussian noise (25% probability)
+        if np.random.random() < 0.25:
+            noise = torch.randn_like(augmented) * self.noise_std
+            # Joint angles (0-5): smaller noise
+            noise[:, :6] *= 0.5
+            augmented += noise
+
+        # 2. Magnitude scaling (30% probability)
+        if np.random.random() < 0.30:
+            # Joint scaling
+            joint_scale = np.random.uniform(*self.joint_scale_range)
+            augmented[:, :6] *= joint_scale
+
+            # Pose scaling
+            pose_scale = np.random.uniform(*self.pose_scale_range)
+            augmented[:, 6:] *= pose_scale
+
+        # 3. Time reversal (15% probability) - Disabled as it might be counter-intuitive
+        # if np.random.random() < 0.15:
+        #     augmented = torch.flip(augmented, dims=[0])
+
+        return augmented
+
+
+# =====================================
 # 2. Robot State Dataset
 # =====================================
 
@@ -85,10 +136,17 @@ class RobotStateDataset(Dataset):
     """
     Dataset that provides windows of robot state data from .npz files.
     """
-    def __init__(self, root_dir: str, window_size: int = 60, step: int = 10):
+    def __init__(self, root_dir: str, window_size: int = 60, step: int = 10,
+                 use_augmentation: bool = True):
         self.window_size = window_size
         self.step = step
         self.data_files = []
+
+        # Data augmentation
+        self.use_augmentation = use_augmentation
+        self.is_training = True  # Training mode by default
+        if self.use_augmentation:
+            self.augmentation = RobotStateAugmentation()
         
         print(f"Scanning for robot_states.npz in {root_dir}...")
         # Find all robot_states.npz files recursively
@@ -109,18 +167,31 @@ class RobotStateDataset(Dataset):
             except Exception as e:
                 print(f"Warning: Could not load or process {file_path}: {e}")
 
+    def train(self):
+        """Enable augmentation for training"""
+        self.is_training = True
+
+    def eval(self):
+        """Disable augmentation for validation"""
+        self.is_training = False
+
     def __len__(self):
         return len(self.windows)
 
     def __getitem__(self, idx):
         file_path, start_idx = self.windows[idx]
-        
+
         # The file is re-opened here, which is fine with mmap
         data = np.load(file_path, mmap_mode='r')['robot_states']
-        
+
         window = data[start_idx : start_idx + self.window_size]
-        
-        return torch.from_numpy(window.astype(np.float32))
+        window_tensor = torch.from_numpy(window.astype(np.float32))
+
+        # Apply augmentation (only during training)
+        if self.use_augmentation and self.is_training:
+            window_tensor = self.augmentation(window_tensor)
+
+        return window_tensor
 
 # =====================================
 # 3. Main Training Function
@@ -169,35 +240,6 @@ def main(args):
     if is_main_process:
         print(f"Using {torch.cuda.device_count()} GPUs for MAE pre-training.")
 
-    # Dataset and DataLoader
-    if is_main_process:
-        print("Creating dataset...")
-    dataset = RobotStateDataset(root_dir=args.dataset_path, window_size=args.window_size)
-    
-    # Split dataset into training and validation
-    val_size = int(len(dataset) * args.val_split)
-    train_size = len(dataset) - val_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-
-    train_sampler = DistributedSampler(train_dataset, shuffle=True)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        sampler=train_sampler,
-        num_workers=args.num_workers,
-        pin_memory=True
-    )
-    # Validation loader runs on all processes, but we only need results from the main one
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size * 2, # Can use larger batch for validation
-        num_workers=args.num_workers,
-        pin_memory=True
-    )
-
-    if is_main_process:
-        print(f"Dataset created with {len(train_dataset)} training windows and {len(val_dataset)} validation windows.")
-
     # Model Setup
     encoder = RobotStateEncoder(
         temporal_length=args.window_size,
@@ -209,13 +251,23 @@ def main(args):
     model = MAERobotStateModel(encoder).to(device)
     model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
     # Dataset and DataLoader
     if is_main_process:
         print("Creating dataset...")
-    dataset = RobotStateDataset(root_dir=args.dataset_path, window_size=args.window_size)
-    
+
+    # Load datasets from multiple paths and concatenate
+    from torch.utils.data import ConcatDataset
+    datasets = []
+    for dataset_path in args.dataset_paths:
+        if is_main_process:
+            print(f"  Loading from {dataset_path}...")
+        ds = RobotStateDataset(root_dir=dataset_path, window_size=args.window_size)
+        datasets.append(ds)
+
+    dataset = ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
+
     # Split dataset into training and validation
     val_size = int(len(dataset) * args.val_split)
     train_size = len(dataset) - val_size
@@ -271,6 +323,11 @@ def main(args):
     for epoch in range(start_epoch, args.epochs):
         train_sampler.set_epoch(epoch)
         model.train()
+
+        # Enable augmentation for training
+        for ds in datasets:
+            ds.train()
+
         train_progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs} [Train]", disable=not is_main_process)
 
         for batch in train_progress_bar:
@@ -292,7 +349,7 @@ def main(args):
 
             # Forward pass
             reconstructed_data = model(masked_input)
-            loss = F.smooth_l1_loss(reconstructed_data[loss_mask], original_data[loss_mask])
+            loss = F.mse_loss(reconstructed_data[loss_mask], original_data[loss_mask])
 
             loss.backward()
             optimizer.step()
@@ -308,6 +365,11 @@ def main(args):
 
         # Validation Loop
         model.eval()
+
+        # Disable augmentation for validation
+        for ds in datasets:
+            ds.eval()
+
         total_val_loss = 0
         val_count = 0
         with torch.no_grad():
@@ -329,7 +391,7 @@ def main(args):
                 loss_mask[batch_indices, masked_indices] = True
 
                 reconstructed_data = model(masked_input)
-                val_loss = F.smooth_l1_loss(reconstructed_data[loss_mask], original_data[loss_mask])
+                val_loss = F.mse_loss(reconstructed_data[loss_mask], original_data[loss_mask])
                 
                 total_val_loss += val_loss.item() * B
                 val_count += B
@@ -375,8 +437,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pre-train RobotStateEncoder with MAE.")
 
     # Dataset & Dataloader
-    parser.add_argument('--dataset_path', type=str, default="/home/najo/NAS/VLA/dataset/New_dataset", help='Path to the root dataset directory.')
-    parser.add_argument('--window_size', type=int, default=65, help='Temporal window size for robot states.')
+    parser.add_argument('--dataset_paths', type=str, nargs='*',
+                        default=["/home/najo/NAS/VLA/dataset/New_dataset", "/home/najo/NAS/VLA/dataset/New_dataset2"],
+                        help='Paths to the root dataset directories.')
+    parser.add_argument('--window_size', type=int, default=100, help='Temporal window size for robot states.')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size per GPU.')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of dataloader workers per GPU.')
     parser.add_argument('--val_split', type=float, default=0.05, help='Proportion of the dataset to use for validation.')
@@ -391,6 +455,7 @@ if __name__ == "__main__":
     # Training & Optimization
     parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs.')
     parser.add_argument('--learning_rate', type=float, default=3e-4, help='Learning rate for the optimizer.')
+    parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for AdamW optimizer.')
     parser.add_argument('--grad_accum', type=int, default=1, help='Number of gradient accumulation steps.')
     parser.add_argument('--min_lr', type=float, default=1e-6, help='Minimum learning rate.')
     parser.add_argument('--warmup_ratio', type=float, default=0.03, help='Ratio of total steps for learning rate warmup.')

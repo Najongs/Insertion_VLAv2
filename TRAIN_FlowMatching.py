@@ -168,6 +168,44 @@ def build_trapezoid_scheduler(
         g["lr"] = prev_lr
     return sched
 
+
+def _count_cache_hits(vl_cache_batch):
+    """Return (#hits, #samples) for a batch-level vl_cache list."""
+    if not isinstance(vl_cache_batch, (list, tuple)):
+        return 0, 0
+
+    hits = 0
+    total = len(vl_cache_batch)
+
+    for entry in vl_cache_batch:
+        if entry is None:
+            continue
+        if isinstance(entry, torch.Tensor):
+            if entry.numel() > 0:
+                hits += 1
+        elif isinstance(entry, (list, tuple)):
+            if any(isinstance(x, torch.Tensor) and x.numel() > 0 for x in entry):
+                hits += 1
+        else:
+            numel = getattr(entry, "numel", None)
+            if callable(numel):
+                try:
+                    if entry.numel() > 0:
+                        hits += 1
+                except Exception:
+                    continue
+
+    return hits, total
+
+
+def _sync_cache_stats(hits, total, device):
+    """All-reduce cache hit stats across DDP ranks."""
+    if dist.is_available() and dist.is_initialized():
+        stats = torch.tensor([hits, total], dtype=torch.float64, device=device)
+        dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+        return stats[0].item(), stats[1].item()
+    return float(hits), float(total)
+
 # ===========================================================
 # 초기화
 # ===========================================================
@@ -189,7 +227,7 @@ def setup_distributed():
 # ============================================================
 # Unified Dataloader Builder
 # ============================================================
-def build_dataloaders(args, rank, world_size, use_cache=True):
+def build_dataloaders(args, rank, world_size, use_cache=True, cache_build_only=False):
     """
     Build unified dataloaders combining:
       ① Old format datasets
@@ -201,7 +239,10 @@ def build_dataloaders(args, rank, world_size, use_cache=True):
     # Dataset directory patterns
     old_priority_patterns = []
     old_regular_patterns = []
-    new_dataset_root = "/home/najo/NAS/VLA/dataset/New_dataset"
+    new_dataset_roots = [
+        "/home/najo/NAS/VLA/dataset/New_dataset",
+        "/home/najo/NAS/VLA/dataset/New_dataset2"
+    ]
 
     # Weight configuration
     old_dataset_weight = getattr(args, "old_dataset_weight", 1.0)
@@ -212,7 +253,7 @@ def build_dataloaders(args, rank, world_size, use_cache=True):
 
     train_loader = create_unified_dataloader(
         old_dataset_patterns=old_priority_patterns + old_regular_patterns,
-        new_dataset_path=new_dataset_root,
+        new_dataset_paths=new_dataset_roots,
         old_weight=old_dataset_weight,
         new_weight=new_dataset_weight,
         batch_size=args.batch_size,
@@ -221,12 +262,20 @@ def build_dataloaders(args, rank, world_size, use_cache=True):
         horizon=args.horizon if hasattr(args, "horizon") else 8,
         vlm_reuse_count=args.vlm_reuse_count if hasattr(args, "vlm_reuse_count") else 3,
         sensor_window_size=args.sensor_window_size if hasattr(args, "sensor_window_size") else 65,
+        robot_window_size=getattr(args, "robot_window_size", 100),
         action_expert_hz=args.action_expert_hz if hasattr(args, "action_expert_hz") else 10,
         distributed=True,
         rank=rank,
         world_size=world_size,
         use_cache=use_cache,  # Pass the flag here
+        use_augmentation=getattr(args, "use_augmentation", False),
+        augmentation_prob=getattr(args, "augmentation_prob", 0.10),
+        cache_build_only=cache_build_only,
+        cache_root=getattr(args, "cache_root", "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features"),
     )
+
+    if cache_build_only:
+        return train_loader, None
 
     # Build VAL dataloader
     print("\n📦 Creating VAL dataloader (validation subset)...")
@@ -243,6 +292,7 @@ def build_dataloaders(args, rank, world_size, use_cache=True):
                     vlm_reuse_count=args.vlm_reuse_count if hasattr(args, "vlm_reuse_count") else 3,
                     sensor_window_size=args.sensor_window_size if hasattr(args, "sensor_window_size") else 65,
                     action_expert_hz=args.action_expert_hz if hasattr(args, "action_expert_hz") else 10,
+                    cache_root=getattr(args, "cache_root", "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features"),
                 )
                 val_datasets.append(ds)
             except Exception as e:
@@ -324,6 +374,8 @@ def Train_FlowMatching(
         total_loss = 0.0
         total_sensor_samples = 0
         total_nonsensor_samples = 0
+        epoch_cache_hits = 0
+        epoch_cache_total = 0
 
         optimizer.zero_grad(set_to_none=True)
         model.train()
@@ -337,6 +389,10 @@ def Train_FlowMatching(
                 instructions = batch["instruction"]
                 image_inputs = batch["images"]
                 gt_actions = batch["actions"].to(device, dtype=torch.bfloat16, non_blocking=True)
+                vl_cache_batch = batch.get("vl_cache")
+                hits, total = _count_cache_hits(vl_cache_batch)
+                epoch_cache_hits += hits
+                epoch_cache_total += total
 
                 # ✅ FLOW MATCHING: Use all actions (B, 8, 7)
                 sensor_data = (
@@ -358,6 +414,12 @@ def Train_FlowMatching(
                             print(f"⚠️ Failed to load robot_states: {e}")
                         robot_states = None
 
+                cache_metadata = {
+                    "dataset_names": batch.get("episode_ids"),
+                    "vlm_indices": batch.get("vlm_indices"),
+                    "prompt_hashes": batch.get("prompt_hash"),
+                }
+
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     # Flow matching: model returns loss directly
                     flow_loss, _, _ = model(
@@ -368,6 +430,7 @@ def Train_FlowMatching(
                         sensor_data=sensor_data if sensor_enabled else None,
                         robot_states=robot_states,
                         vl_cache_tokens=batch.get("vl_cache"),
+                        vl_cache_metadata=cache_metadata,
                     )
 
                     # ✅ Count sensor samples for logging
@@ -395,10 +458,19 @@ def Train_FlowMatching(
 
                     lr = optimizer.param_groups[0]["lr"]
                     if rank == 0:
+                        running_cache_ratio = (
+                            epoch_cache_hits / epoch_cache_total
+                            if epoch_cache_total > 0 else 0.0
+                        )
+                        cache_status = (
+                            f"{running_cache_ratio*100:.1f}% ({epoch_cache_hits}/{epoch_cache_total})"
+                            if epoch_cache_total > 0 else "0.0% (0/0)"
+                        )
                         postfix_dict = {
                             "loss": f"{loss.item() * grad_accum_steps:.6f}",
                             "lr": f"{lr:.2e}",
-                            "grad": f"{grad_norm:.2f}"
+                            "grad": f"{grad_norm:.2f}",
+                            "cache": cache_status,
                         }
                         if sensor_enabled:
                             postfix_dict["sensor"] = f"{total_sensor_samples}/{total_sensor_samples+total_nonsensor_samples}"
@@ -408,7 +480,8 @@ def Train_FlowMatching(
                             "train/loss_step": loss.item() * grad_accum_steps,
                             "train/lr": lr,
                             "train/grad_norm": grad_norm,
-                            "global_step": global_step
+                            "global_step": global_step,
+                            "train/cache_hit_ratio_step": running_cache_ratio,
                         }
                         if sensor_enabled:
                             log_dict["train/sensor_samples"] = total_sensor_samples
@@ -449,6 +522,12 @@ def Train_FlowMatching(
                             if "robot_states" in batch and sensor_enabled else None
                         )
 
+                        cache_metadata = {
+                            "dataset_names": batch.get("episode_ids"),
+                            "vlm_indices": batch.get("vlm_indices"),
+                            "prompt_hashes": batch.get("prompt_hash"),
+                        }
+
                         # Flow matching: model returns loss directly
                         loss, _, _ = model(
                             text_inputs=batch["instruction"],
@@ -458,6 +537,7 @@ def Train_FlowMatching(
                             sensor_data=sensor_data if sensor_enabled else None,
                             robot_states=robot_states,
                             vl_cache_tokens=batch.get("vl_cache"),
+                            vl_cache_metadata=cache_metadata,
                         )
                         if loss.ndim > 0:
                             loss = loss.mean()
@@ -470,6 +550,9 @@ def Train_FlowMatching(
 
             val_loss = val_loss_sum / max(1, val_count)
             model.train()
+
+        synced_hits, synced_total = _sync_cache_stats(epoch_cache_hits, epoch_cache_total, device)
+        cache_hit_ratio = (synced_hits / synced_total) if synced_total > 0 else 0.0
 
         # Checkpoint saving
         if rank == 0:
@@ -492,6 +575,8 @@ def Train_FlowMatching(
                 "system/gpu_mem_GB": gpu_mem,
                 "system/cpu_mem_%": cpu_mem,
                 "lr/base_lr": optimizer.param_groups[0]["lr"],
+                "train/cache_hit_ratio": cache_hit_ratio,
+                "train/cache_samples": synced_total,
             }
 
             if sensor_enabled:
@@ -502,6 +587,7 @@ def Train_FlowMatching(
             wandb.log(log_dict)
             print(f"\n📊 Epoch {epoch+1} Summary | Train: {avg_loss:.8f} | " +
                   (f"Val: {val_loss:.8f}" if val_loss else ""))
+            print(f"   Cache hit ratio: {cache_hit_ratio*100:.2f}% ({int(synced_hits)}/{int(synced_total)})")
 
             model_module = model.module if hasattr(model, "module") else model
             ckpt_data = {
@@ -547,6 +633,9 @@ def main():
     # Dataset
     parser.add_argument('--dataset_dir', type=str, default='/home/najo/NAS/VLA/dataset',
                         help='Dataset directory')
+    parser.add_argument('--cache_root', type=str,
+                        default='/home/najo/NAS/VLA/dataset/cache/qwen_vl_features',
+                        help='VL feature cache directory (prompt-hash aware).')
     parser.add_argument('--val_split', type=float, default=0.1, help='Validation split ratio')
 
     # Training hyperparameters
@@ -578,11 +667,16 @@ def main():
                         help='Path to pre-trained robot state encoder checkpoint.')
     parser.add_argument('--freeze_encoders', action='store_true', help='Freeze sensor and robot state encoders after loading weights.')
 
+    # Data augmentation
+    parser.add_argument('--use_augmentation', action='store_true', help='Enable minimal image augmentation (only works without cache)')
+    parser.add_argument('--augmentation_prob', type=float, default=0.10, help='Augmentation probability (default: 0.10)')
+
     # Other
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
     parser.add_argument('--use_cache', action='store_true', help='Enable VL feature caching')
     parser.add_argument('--finetune_vl', type=str, default='none', choices=['none', 'lora', 'full'], help='Fine-tuning mode for VL model')
+    parser.add_argument('--cache_loader_only', action='store_true', help='Use lightweight dataloader optimized for cache building')
 
     args = parser.parse_args()
 
@@ -597,11 +691,54 @@ def main():
         print(f"   Dataset: {args.dataset_dir}")
 
     vl_model_name = "Qwen/Qwen2.5-VL-3B-Instruct"
-    cache_dir = Path("/home/najo/NAS/VLA/dataset/cache/qwen_vl_features")
+    cache_dir = Path(args.cache_root)
+    cache_loader_mode = args.cache_loader_only or (args.mode == 'cache')
 
     # Cache build mode
     if args.mode == 'cache':
-        # ... (cache building logic remains the same)
+        if rank == 0:
+            print("--- Starting VL Cache Building ---")
+
+        # 1. Dataloader (use_cache=False is crucial)
+        train_loader, _ = build_dataloaders(
+            args,
+            rank,
+            world_size,
+            use_cache=True,  # 캐시 생성 시점과 학습 시점의 프롬프트/해시를 일치시켜 재사용 가능하게 함
+            cache_build_only=cache_loader_mode,
+        )
+
+        # 2. Model (needed for its processor and VL model)
+        model = QwenVLAUnified(
+            model_type='flow_matching', vl_model_name=vl_model_name, action_dim=7, horizon=8,
+            hidden_dim=1024, sensor_enabled=False, # Sensor data not needed for VL cache
+            fusion_strategy=args.fusion_strategy, finetune_vl='none',
+            image_resize_height=args.image_resize_height, image_resize_width=args.image_resize_width,
+            device_map=None,
+            external_cache_root=args.cache_root,
+        )
+        model = model.to(device)
+        
+        # Pass cache_dir to the model so the builder can find it
+        # This is a bit of a hack, but it's how the cache builder is designed
+        model.cache_dir = cache_dir
+
+        # 3. Run the cache building process
+        build_vl_cache_distributed_optimized(
+            model=model,
+            dataset=train_loader.dataset,
+            device=device,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+        )
+
+        if rank == 0:
+            print("--- VL Cache Building Complete ---")
+        
+        # Ensure all processes sync up before exiting
+        if dist.is_initialized():
+            dist.barrier()
+        
         return
 
     # Training mode
@@ -611,7 +748,7 @@ def main():
         if not cache_dir.exists() or not any(cache_dir.iterdir()):
             print(f"   [경고!] 캐시 디렉토리가 비어있거나 존재하지 않습니다!")
 
-    train_loader, val_loader = build_dataloaders(args, rank, world_size, use_cache=args.use_cache)
+    train_loader, val_loader = build_dataloaders(args, rank, world_size, use_cache=args.use_cache, cache_build_only=args.cache_loader_only)
 
     if rank == 0: print("⏳ Initializing model for training...")
 
@@ -624,6 +761,7 @@ def main():
         fusion_strategy=args.fusion_strategy, finetune_vl=args.finetune_vl,
         image_resize_height=args.image_resize_height, image_resize_width=args.image_resize_width,
         device_map=None,
+        external_cache_root=args.cache_root,
     )
     model = model.to(device)
 
@@ -645,6 +783,26 @@ def main():
             ckpt = torch.load(args.load_robot_state_encoder_checkpoint, map_location='cpu')
             prefix = 'encoder.'
             robot_state_encoder_state_dict = {k.replace(prefix, ''): v for k, v in ckpt['model_state_dict'].items() if k.startswith(prefix)}
+
+            # Handle positional encoding size mismatch (65 -> 100)
+            if 'pos_encoder' in robot_state_encoder_state_dict:
+                pretrained_pos_enc = robot_state_encoder_state_dict['pos_encoder']  # [1, 65, 256]
+                current_pos_enc = model.robot_state_encoder.pos_encoder  # [1, 100, 256]
+
+                if pretrained_pos_enc.shape[1] != current_pos_enc.shape[1]:
+                    print(f"   ⚠️ Positional encoding size mismatch: {pretrained_pos_enc.shape} -> {current_pos_enc.shape}")
+                    print(f"   🔧 Interpolating positional encoding from {pretrained_pos_enc.shape[1]} to {current_pos_enc.shape[1]}")
+
+                    # Interpolate along the sequence dimension
+                    pretrained_pos_enc = pretrained_pos_enc.permute(0, 2, 1)  # [1, 256, 65]
+                    interpolated = torch.nn.functional.interpolate(
+                        pretrained_pos_enc,
+                        size=current_pos_enc.shape[1],
+                        mode='linear',
+                        align_corners=True
+                    )
+                    robot_state_encoder_state_dict['pos_encoder'] = interpolated.permute(0, 2, 1)  # [1, 100, 256]
+
             model.robot_state_encoder.load_state_dict(robot_state_encoder_state_dict, strict=False)
             print("✅ RobotStateEncoder weights loaded.")
 
@@ -678,12 +836,43 @@ def main():
     if args.resume:
         if rank == 0: print(f"Resuming from {args.resume}")
         ckpt = copy_to_local_then_load(Path(args.resume), map_location=device)
+
+        # Handle positional encoding size mismatch (65 -> 100)
+        state_dict = ckpt["model_state_dict"]
+        has_size_mismatch = False
+        if 'robot_state_encoder.pos_encoder' in state_dict:
+            pretrained_pos_enc = state_dict['robot_state_encoder.pos_encoder']  # [1, 65, 256]
+            current_pos_enc = model.module.robot_state_encoder.pos_encoder  # [1, 100, 256]
+
+            if pretrained_pos_enc.shape[1] != current_pos_enc.shape[1]:
+                has_size_mismatch = True
+                if rank == 0:
+                    print(f"   ⚠️ Positional encoding size mismatch: {pretrained_pos_enc.shape} -> {current_pos_enc.shape}")
+                    print(f"   🔧 Interpolating positional encoding from {pretrained_pos_enc.shape[1]} to {current_pos_enc.shape[1]}")
+
+                # Interpolate along the sequence dimension
+                pretrained_pos_enc = pretrained_pos_enc.permute(0, 2, 1)  # [1, 256, 65]
+                interpolated = torch.nn.functional.interpolate(
+                    pretrained_pos_enc,
+                    size=current_pos_enc.shape[1],
+                    mode='linear',
+                    align_corners=True
+                )
+                state_dict['robot_state_encoder.pos_encoder'] = interpolated.permute(0, 2, 1)  # [1, 100, 256]
+
         # Load model state, but be careful about frozen parts
-        model.module.load_state_dict(ckpt["model_state_dict"], strict=False)
-        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-        if scheduler and ckpt.get("scheduler_state_dict"):
-            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-        start_epoch = ckpt.get("epoch", 0)
+        model.module.load_state_dict(state_dict, strict=False)
+
+        # Only load optimizer state if there's no size mismatch (to avoid tensor size errors in optimizer states)
+        if not has_size_mismatch:
+            optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            if scheduler and ckpt.get("scheduler_state_dict"):
+                scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        else:
+            if rank == 0:
+                print(f"   ⚠️ Skipping optimizer/scheduler state loading due to size mismatch. Training will start fresh.")
+
+        start_epoch = ckpt.get("epoch", 0) if not has_size_mismatch else 0
 
     # Train
     Train_FlowMatching(

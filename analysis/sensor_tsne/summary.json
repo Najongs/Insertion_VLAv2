@@ -1,0 +1,10 @@
+{
+  "tsne": {
+    "csv": "/home/najo/NAS/VLA/Insertion_VLAv2/analysis/sensor_tsne/sensor_tsne.csv",
+    "plot": "/home/najo/NAS/VLA/Insertion_VLAv2/analysis/sensor_tsne/sensor_tsne.png"
+  },
+  "umap": {
+    "csv": "/home/najo/NAS/VLA/Insertion_VLAv2/analysis/sensor_tsne/sensor_umap.csv",
+    "plot": "/home/najo/NAS/VLA/Insertion_VLAv2/analysis/sensor_tsne/sensor_umap.png"
+  }
+}

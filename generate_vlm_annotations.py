@@ -11,7 +11,10 @@ import argparse
 # ==============================
 # Configuration
 # ==============================
-DATASET_ROOT = "/home/najo/NAS/VLA/dataset/New_dataset"
+DEFAULT_DATASET_ROOTS = [
+    "/home/najo/NAS/VLA/dataset/New_dataset",
+    "/home/najo/NAS/VLA/dataset/New_dataset2"
+]
 VLM_MODEL_PATH = "Qwen/Qwen2.5-VL-7B-Instruct"
 OUTPUT_FILE = "vlm_annotations.json"
 HAND_EYE_VIEW_KEYWORD = "View5"
@@ -52,9 +55,13 @@ def get_prompt_for_task(task_name):
     # ----------- Eye Trocar task ----------------
     if "eye" in task_name.lower() or "trocar" in task_name.lower():
         return (
-            "This is a hand-eye camera image from a robotic trocar insertion task on an optical breadboard. "
-            "The pegboard is NOT the target.\n\n"
-            "Task: Locate the trocar on an eye phantom. The trocar is a small cylindrical part with a central hole.\n\n"
+            "You are an intelligent robotic assistant observing a surgical scene through a hand-eye camera. "
+            "Your current task is **trocar insertion into an eye phantom**. "
+            "The environment includes an optical breadboard, but the pegboard is not your target. "
+            "Focus on the **trocar**, which is a small cylindrical part with a central hole, and the **needle** attached to the robot arm. "
+            "You need to identify the **target (trocar)** and assess its position relative to the needle. "
+            "Consider how the robot should move to achieve insertion. "
+            "Describe the current situation, including the surrounding objects and environment relevant to the task.\n\n"
             "You MUST output the following structure:\n"
             "1) Target visibility: FULLY_VISIBLE / PARTIALLY_VISIBLE / NOT_VISIBLE\n"
             "2) Needle distance: FAR / MID / NEAR\n"
@@ -80,9 +87,13 @@ def get_prompt_for_task(task_name):
             color = "white"
 
         return (
-            f"This is a hand-eye camera image from a robotic needle insertion task on an optical breadboard. "
-            f"The pegboard is NOT the target.\n\n"
-            f"Task: Locate the {color} dot target on the silicone surface.\n\n"
+            f"You are an intelligent robotic assistant observing a robotic needle insertion task through a hand-eye camera. "
+            f"Your current task is **inserting a needle into a {color} dot target on a silicone surface**. "
+            f"The environment includes an optical breadboard, but the pegboard is not your target. "
+            f"Focus on the **needle** attached to the robot arm and the **{color} dot target**. "
+            f"You need to identify the **target ({color} dot)** and assess its position relative to the needle. "
+            f"Consider how the robot should move to achieve insertion. "
+            f"Describe the current situation, including the surrounding objects and environment relevant to the task.\n\n"
             f"Output the following structure:\n"
             f"1) Target visibility: FULLY_VISIBLE / PARTIALLY_VISIBLE / NOT_VISIBLE\n"
             f"2) Needle distance: FAR / MID / NEAR / VERY_NEAR\n"
@@ -125,6 +136,8 @@ def main():
                        help="GPU ID to use (default: 0)")
     parser.add_argument("--test_mode", action="store_true",
                        help="Test mode: process only one episode")
+    parser.add_argument("--dataset_roots", type=str, nargs='*', default=DEFAULT_DATASET_ROOTS,
+                       help="Paths to dataset root directories (default: New_dataset and New_dataset2)")
     args = parser.parse_args()
 
     # Set GPU device
@@ -144,74 +157,96 @@ def main():
     annotations = {}
     total_generated_count = 0
 
-    # Determine which tasks to process
-    if args.task_name:
-        task_folders = [args.task_name]
-        print(f"Processing single task: {args.task_name}")
-    else:
-        task_folders = [
-            d for d in os.listdir(DATASET_ROOT)
-            if os.path.isdir(os.path.join(DATASET_ROOT, d))
-        ]
-        print(f"Processing all tasks: {task_folders}")
-
-    for task_name in task_folders:
-        # Skip if task folder doesn't exist
-        task_path = os.path.join(DATASET_ROOT, task_name)
-        if not os.path.exists(task_path):
-            print(f"Warning: Task folder not found: {task_path}")
+    # Process each dataset root
+    for dataset_root in args.dataset_roots:
+        if not os.path.exists(dataset_root):
+            print(f"Warning: Dataset root not found: {dataset_root}, skipping...")
             continue
 
-        tqdm.write(f"\nProcessing task: {task_name}")
-        episode_folders = [e for e in os.listdir(task_path) if e.startswith("episode_")]
+        print(f"\nProcessing dataset root: {dataset_root}")
 
-        for episode_id in tqdm(episode_folders, desc=f"Episodes in {task_name}"):
-            episode_path = os.path.join(task_path, episode_id)
-            annotations[episode_id] = {}
-            target_found_timestamp = None
+        # Determine which tasks to process
+        if args.task_name:
+            task_folders = [args.task_name]
+            print(f"Processing single task: {args.task_name}")
+        else:
+            task_folders = [
+                d for d in os.listdir(dataset_root)
+                if os.path.isdir(os.path.join(dataset_root, d))
+            ]
+            print(f"Processing all tasks: {task_folders}")
 
-            try:
-                image_dir = os.path.join(episode_path, "images", HAND_EYE_VIEW_KEYWORD)
-                image_files = sorted(
-                    [f for f in os.listdir(image_dir) if f.endswith(".jpg")],
-                    key=lambda f: re.search(r"(\d{10,}\.\d+)", f).group(1)
-                )
+        for task_name in task_folders:
+            # Skip if task folder doesn't exist
+            task_path = os.path.join(dataset_root, task_name)
+            if not os.path.exists(task_path):
+                print(f"Warning: Task folder not found: {task_path}")
+                continue
 
-                # Determine frame skip based on task
-                if "eye" in task_name.lower() or "trocar" in task_name.lower():
-                    min_frame_skip = 100
-                else:
-                    min_frame_skip = 60
+            tqdm.write(f"\nProcessing task: {task_name}")
+            # Support both 'episode_*' and 'data_collection_*' folder patterns
+            episode_folders = [
+                e for e in os.listdir(task_path)
+                if e.startswith("episode_") or e.startswith("data_collection_")
+            ]
 
-                for frame_idx, image_name in enumerate(image_files):
-                    # Skip early frames
-                    if frame_idx < min_frame_skip:
-                        continue
+            for episode_id in tqdm(episode_folders, desc=f"Episodes in {task_name}"):
+                episode_path = os.path.join(task_path, episode_id)
+                annotations[episode_id] = {}
+                target_found_timestamp = None
 
-                    timestamp_match = re.search(r"(\d{10,}\.\d+)\.jpg", image_name)
-                    if not timestamp_match:
-                        continue
+                try:
+                    # Handle different folder structures
+                    # Old format: episode_*/images/View5
+                    # New format: data_collection_*/View5
+                    if episode_id.startswith("episode_"):
+                        image_dir = os.path.join(episode_path, "images", HAND_EYE_VIEW_KEYWORD)
+                    else:  # data_collection_*
+                        image_dir = os.path.join(episode_path, HAND_EYE_VIEW_KEYWORD)
 
-                    timestamp = timestamp_match.group(1)
-                    image_path = os.path.join(image_dir, image_name)
+                    image_files = sorted(
+                        [f for f in os.listdir(image_dir) if f.endswith(".jpg")],
+                        key=lambda f: re.search(r"(\d{10,}\.\d+)", f).group(1)
+                    )
 
-                    response = generate_vlm_description(image_path, model, processor, task_name)
-                    annotations[episode_id][timestamp] = response
-                    total_generated_count += 1
+                    # Determine frame skip based on task
+                    if "eye" in task_name.lower() or "trocar" in task_name.lower():
+                        min_frame_skip = 100
+                    else:
+                        min_frame_skip = 200 # 60
 
-                    # ✅ Trigger detection
-                    if target_found_timestamp is None and is_target_found(response, frame_idx, task_name):
-                        target_found_timestamp = timestamp
-                        tqdm.write(f"[TRIGGER] Target found at {timestamp} (frame {frame_idx})")
-                        break
+                    for frame_idx, image_name in enumerate(image_files):
+                        # Skip early frames
+                        if frame_idx < min_frame_skip:
+                            continue
 
-            except Exception as e:
-                tqdm.write(f"Warning: Failed to process {episode_id}. Error: {e}")
+                        timestamp_match = re.search(r"(\d{10,}\.\d+)\.jpg", image_name)
+                        if not timestamp_match:
+                            continue
 
-            annotations[episode_id]["target_found_timestamp"] = target_found_timestamp
+                        timestamp = timestamp_match.group(1)
+                        image_path = os.path.join(image_dir, image_name)
+
+                        response = generate_vlm_description(image_path, model, processor, task_name)
+                        annotations[episode_id][timestamp] = response
+                        total_generated_count += 1
+
+                        # ✅ Trigger detection
+                        if target_found_timestamp is None and is_target_found(response, frame_idx, task_name):
+                            target_found_timestamp = timestamp
+                            tqdm.write(f"[TRIGGER] Target found at {timestamp} (frame {frame_idx})")
+                            break
+
+                except Exception as e:
+                    tqdm.write(f"Warning: Failed to process {episode_id}. Error: {e}")
+
+                annotations[episode_id]["target_found_timestamp"] = target_found_timestamp
+
+                if args.test_mode:
+                    print("Test mode: processed one episode, stopping.")
+                    break
 
             if args.test_mode:
-                print("Test mode: processed one episode, stopping.")
                 break
 
         if args.test_mode:

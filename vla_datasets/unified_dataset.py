@@ -6,36 +6,10 @@ Unified VLA Dataset (통합 데이터셋)
 2. New Format (NewAsyncInsertionDataset): metadata.json + sensor_data.npz 기반
 
 Key Features:
-- VL feature caching support (완전 고정 캐싱)
+- VL feature caching support (Prompt-aware caching)
 - Memory-optimized with mmap
 - Weighted random sampling
 - Async VLM update pattern (reuse_count)
-
-Usage:
-    # Old format dataset
-    ds = UnifiedVLADataset(
-        data_dir="/path/to/recv_all_xxx",
-        format='old',
-        horizon=8,
-        vlm_reuse_count=3
-    )
-
-    # New format dataset
-    ds = UnifiedVLADataset(
-        data_dir="/path/to/episode_xxx",
-        format='new',
-        horizon=8,
-        vlm_reuse_count=3
-    )
-
-    # Create weighted dataloader
-    loader = create_unified_dataloader(
-        old_dataset_patterns=["/path/to/old/*"],
-        new_dataset_path="/path/to/new",
-        old_weight=1.0,
-        new_weight=3.0,
-        batch_size=4
-    )
 """
 
 import os
@@ -43,6 +17,7 @@ import gc
 import glob
 import json
 import pickle
+import hashlib
 from pathlib import Path
 from typing import Literal, Optional, List, Dict, Any
 from collections import OrderedDict
@@ -52,12 +27,49 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, WeightedRandomSampler
 from torch.utils.data.distributed import DistributedSampler
+from PIL import Image
+from torchvision import transforms
 
 # Import VLA Cache Manager
 import sys
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 from vla_cache_manager import get_cache_manager
+
+
+# =====================================
+# Image Augmentation (Very Minimal)
+# =====================================
+
+class MinimalImageAugmentation:
+    """
+    Minimal conservative augmentation for VLA training.
+    Only small rotation with 10% probability.
+    """
+    def __init__(self, prob: float = 0.10):
+        self.prob = prob
+
+    def __call__(self, image_path: str):
+        """
+        Args:
+            image_path: Path to image file
+        Returns:
+            Augmented PIL Image or original if augmentation fails/skipped
+        """
+        try:
+            # Load image
+            img = Image.open(image_path).convert("RGB")
+
+            # Apply small rotation (10% probability)
+            if np.random.random() < self.prob:
+                angle = np.random.uniform(-2, 2)  # Very small angle: ±2 degrees
+                img = transforms.functional.rotate(img, angle)
+
+            return img
+        except Exception as e:
+            # If augmentation fails, return original image
+            print(f"⚠️ Image augmentation failed for {image_path}: {e}")
+            return Image.open(image_path).convert("RGB")
 
 
 # =====================================
@@ -119,25 +131,48 @@ class UnifiedVLADataset(Dataset):
         horizon: int = 8,
         vlm_reuse_count: int = 3,
         sensor_window_size: int = 65,
+        robot_window_size: int = 100,
         action_expert_hz: int = 10,
         instruction: Optional[str] = None,
         cache_root: str = "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
         use_cache: bool = True,
+        use_augmentation: bool = False,
+        augmentation_prob: float = 0.10,
+        cache_build_only: bool = False,
+        # Ablation study arguments
+        views_to_use: Optional[List[int]] = None,
+        disable_sensor: bool = False,
+        disable_robot_state: bool = False,
     ):
         self.data_dir = Path(data_dir)
         self.cache_root = Path(cache_root)
         self.horizon = int(horizon)
         self.vlm_reuse_count = int(vlm_reuse_count)
         self.sensor_window_size = int(sensor_window_size)
+        self.robot_window_size = int(robot_window_size)
         self.action_expert_hz = int(action_expert_hz)
         self.sensor_hz = 650
         self.use_cache = use_cache
+        self.use_augmentation = use_augmentation
+        self.cache_build_only = bool(cache_build_only)
+        self.views_to_use = views_to_use
+        self.disable_sensor = disable_sensor
+        self.disable_robot_state = disable_robot_state
+
+        # Initialize augmentation (only if not using cache)
+        if self.use_augmentation and not self.use_cache:
+            self.augmentation = MinimalImageAugmentation(prob=augmentation_prob)
+        else:
+            self.augmentation = None
 
         # Auto-detect format
         if format == 'auto':
             format = self._detect_format()
 
         self.format = format
+
+        from vla_cache_manager import get_cache_manager
+        self.cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
 
         # Load data based on format
         if format == 'old':
@@ -147,12 +182,36 @@ class UnifiedVLADataset(Dataset):
         else:
             raise ValueError(f"Unknown format: {format}")
 
+        # --- ✅ Generate prompt hash for versioned caching ---
+        self.prompt_hash = hashlib.sha256(self.instruction.encode()).hexdigest()[:8]
+
+        # --- Apply Ablation Settings ---
+        if self.disable_sensor:
+            self.has_sensor = False
+            # Replace sensor data with zeros to ensure consistent types
+            if self.sensor_data is not None:
+                self.sensor_data = np.zeros_like(self.sensor_data)
+
+        if self.disable_robot_state:
+            self.has_robot_states = False
+            # Replace robot state data with zeros
+            if self.robot_states is not None:
+                self.robot_states = np.zeros_like(self.robot_states)
+
+        if self.views_to_use is not None and self.images:
+            filtered_images = {}
+            view_keys = list(self.images.keys())
+            for view_key in view_keys:
+                # Check if any of the specified view numbers are in the view_key string
+                if any(f"{v}" in view_key for v in self.views_to_use):
+                    filtered_images[view_key] = self.images[view_key]
+            self.images = filtered_images
+            if not self.images:
+                print(f"⚠️ WARNING: --views {self.views_to_use} resulted in no images being loaded for {self.data_dir.name}")
+        # --- End of Ablation Settings ---
+
         # Pre-scan VL cache files (optimization)
         self._scan_vl_cache()
-
-        # ✅ OPTIMIZATION: Reduce print output (only show summary for large datasets)
-        # print(f"📦 Loaded {self.data_dir.name} ({self.format} format)")
-        # print(f"   Samples: {self._total_samples}, Sensor: {self.has_sensor}, VL Cache: {self.cache_found_count}/{len(self.vl_cache_files)}")
 
     def _detect_format(self) -> str:
         """Auto-detect dataset format"""
@@ -412,7 +471,7 @@ class UnifiedVLADataset(Dataset):
                 self.images[view_name] = [str(f) for f in files]
 
         # Sample count
-        self.num_actions = (self.num_poses - self.action_interval) // self.action_interval
+        self.num_actions = max(0, (self.num_poses - self.action_interval) // self.action_interval)
         self._total_samples = self.num_actions
 
         # For new format
@@ -448,34 +507,34 @@ class UnifiedVLADataset(Dataset):
         return self.sensor_npz
 
     def _scan_vl_cache(self):
-        """Pre-scan VL cache files using VLACacheManager"""
-        from vla_cache_manager import get_cache_manager
-
-        cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
+        """Pre-scan VL cache files using VLACacheManager with prompt hash."""
         self.vl_cache_files = {}
         dataset_name = self.data_dir.name
+        found = 0
 
         if self.format == 'old':
             # Old format: vlm_idx based on action steps
             for action_step in range(self.max_action_steps):
                 vlm_idx = min(action_step * self.action_step_size, len(self.actions) - 1)
-                if vlm_idx not in self.vl_cache_files:
-                    if cache_mgr.cache_exists(dataset_name, vlm_idx):
-                        self.vl_cache_files[vlm_idx] = cache_mgr.get_cache_path(dataset_name, vlm_idx)
-                    else:
-                        self.vl_cache_files[vlm_idx] = None
+                if vlm_idx in self.vl_cache_files:
+                    continue
+
+                cache_path = self.cache_mgr.get_cache_path(dataset_name, vlm_idx, self.prompt_hash)
+                self.vl_cache_files[vlm_idx] = cache_path
+                if cache_path.exists():
+                    found += 1
 
         else:  # new format
             # New format: vlm_idx based on vlm_interval
             num_vlm_steps = (self._total_samples + self.vlm_reuse_count - 1) // self.vlm_reuse_count
             for i in range(num_vlm_steps):
                 vlm_idx = i * self.vlm_interval
-                if cache_mgr.cache_exists(dataset_name, vlm_idx):
-                    self.vl_cache_files[vlm_idx] = cache_mgr.get_cache_path(dataset_name, vlm_idx)
-                else:
-                    self.vl_cache_files[vlm_idx] = None
+                cache_path = self.cache_mgr.get_cache_path(dataset_name, vlm_idx, self.prompt_hash)
+                self.vl_cache_files[vlm_idx] = cache_path
+                if cache_path.exists():
+                    found += 1
 
-        self.cache_found_count = sum(1 for p in self.vl_cache_files.values() if p is not None)
+        self.cache_found_count = found
 
     def __len__(self):
         return self._total_samples
@@ -485,6 +544,7 @@ class UnifiedVLADataset(Dataset):
         state = self.__dict__.copy()
         if self.format == 'new':
             state['sensor_npz'] = None
+        state['cache_mgr'] = None
         return state
 
     def __setstate__(self, state):
@@ -492,15 +552,63 @@ class UnifiedVLADataset(Dataset):
         self.__dict__.update(state)
         if self.format == 'new':
             self.sensor_npz = None
+        from vla_cache_manager import get_cache_manager
+        self.cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
 
     def __getitem__(self, idx):
         if idx >= self._total_samples:
             raise IndexError
 
+        if self.cache_build_only:
+            return self._getitem_cache_only(idx)
+
         if self.format == 'old':
             return self._getitem_old(idx)
         else:
             return self._getitem_new(idx)
+
+    def _getitem_cache_only(self, idx):
+        reuse_step = idx % self.vlm_reuse_count
+        if self.format == 'old':
+            action_step = idx // self.vlm_reuse_count
+            if len(self.actions) > 0:
+                vlm_idx = min(action_step * self.action_step_size, len(self.actions) - 1)
+            else:
+                vlm_idx = 0
+        else:
+            action_step = idx
+            vlm_idx = (idx // self.vlm_reuse_count) * self.vlm_interval if self.vlm_reuse_count > 0 else 0
+
+        _, image_paths = self._load_vl_or_images(vlm_idx)
+        cache_key = f"{self.data_dir.name}_vlm{vlm_idx}"
+
+        sample = {
+            "instruction": self.instruction,
+            "images": image_paths,
+            "vl_cache": None,
+            "sensor_data": torch.zeros((1, 1026), dtype=torch.float32),
+            "robot_states": torch.zeros((1, 12), dtype=torch.float32),
+            "actions": torch.zeros((self.horizon, 7), dtype=torch.float32),
+            "has_sensor": False,
+            "has_robot_states": False,
+            "cache_key": cache_key,
+            "vlm_idx": int(vlm_idx),
+            "reuse_step": int(reuse_step),
+            "confidence": 0.0,
+            "prompt_hash": self.prompt_hash,
+        }
+
+        if self.format != 'old':
+            timestamp = 0.0
+            if image_paths:
+                try:
+                    timestamp = float(Path(image_paths[0]).stem)
+                except (ValueError, IndexError):
+                    timestamp = 0.0
+            sample["episode_id"] = self.data_dir.name
+            sample["timestamp"] = timestamp
+
+        return sample
 
     def _getitem_old(self, idx):
         """Get item for old format"""
@@ -539,6 +647,7 @@ class UnifiedVLADataset(Dataset):
             "vlm_idx": int(vlm_idx),
             "reuse_step": int(reuse_step),
             "confidence": 1.0 if self.has_sensor else 0.5,
+            "prompt_hash": self.prompt_hash,
         }
 
     def _getitem_new(self, idx):
@@ -584,29 +693,28 @@ class UnifiedVLADataset(Dataset):
             "confidence": 1.0,
             "episode_id": self.data_dir.name,
             "timestamp": timestamp,
+            "prompt_hash": self.prompt_hash,
         }
 
     def _load_vl_or_images(self, vlm_idx):
-        """Load VL cache or return image paths using VLACacheManager"""
-        from vla_cache_manager import get_cache_manager
-
+        """Load VL cache or return image paths/PIL images using VLACacheManager"""
         vl_cache = None
-        image_paths = []
+        image_data = []
 
         cache_path = self.vl_cache_files.get(vlm_idx)
 
         if self.use_cache and cache_path:
             # Use cache manager for loading
-            cache_mgr = get_cache_manager(cache_dir=str(self.cache_root))
-            vl_cache = cache_mgr.load_cache(
+            vl_cache = self.cache_mgr.load_cache(
                 dataset_name=self.data_dir.name,
                 vlm_idx=vlm_idx,
+                prompt_hash=self.prompt_hash,
                 device="cpu"
             )
             if vl_cache is not None:
-                return vl_cache, None
+                return vl_cache, []
 
-        # Fallback to image paths
+        # Fallback to image paths (with optional augmentation)
         if isinstance(self.images, dict):
             for view_name in sorted(self.images.keys()):
                 view_images = self.images[view_name]
@@ -614,11 +722,22 @@ class UnifiedVLADataset(Dataset):
                     img_idx = min(vlm_idx, len(view_images) - 1)
                     if self.format == 'old':
                         img_path = view_images[img_idx]
-                        image_paths.append(img_path if img_path else "")
+                        img_path_str = img_path if img_path else ""
                     else:
-                        image_paths.append(view_images[img_idx])
+                        img_path_str = view_images[img_idx]
 
-        return vl_cache, image_paths
+                    # Apply augmentation if enabled (only when not using cache)
+                    if self.augmentation is not None and img_path_str:
+                        try:
+                            augmented_img = self.augmentation(img_path_str)
+                            image_data.append(augmented_img)
+                        except Exception as e:
+                            print(f"⚠️ Augmentation failed for {img_path_str}: {e}")
+                            image_data.append(img_path_str)
+                    else:
+                        image_data.append(img_path_str)
+
+        return vl_cache, image_data
 
     def _get_sensor_window_old(self, start, end):
         """Get sensor window for old format"""
@@ -656,36 +775,39 @@ class UnifiedVLADataset(Dataset):
     def _get_robot_state_window_old(self, start, end):
         """Get robot state window for old format (joint + pose: 12 dims)"""
         if not self.has_robot_states:
-            return np.zeros((self.sensor_window_size, 12), dtype=np.float32)
+            return np.zeros((self.robot_window_size, 12), dtype=np.float32)
 
         T_robot = len(self.robot_states)
         if T_robot == 0 or start >= T_robot:
-            return np.zeros((self.sensor_window_size, 12), dtype=np.float32)
+            return np.zeros((self.robot_window_size, 12), dtype=np.float32)
 
-        rw = self.robot_states[start:min(end, T_robot)]
-        if rw.shape[0] < self.sensor_window_size:
-            pad = np.zeros((self.sensor_window_size - rw.shape[0], 12), dtype=np.float32)
+        # Use robot_window_size instead of sensor_window_size
+        robot_end = min(start + self.robot_window_size, T_robot)
+        rw = self.robot_states[start:robot_end]
+
+        if rw.shape[0] < self.robot_window_size:
+            pad = np.zeros((self.robot_window_size - rw.shape[0], 12), dtype=np.float32)
             return np.concatenate([rw, pad], axis=0)
         return rw
 
     def _get_robot_state_window_new(self, idx):
         """Get robot state window for new format (joint + pose: 12 dims)"""
         if not self.has_robot_states:
-            return np.zeros((self.sensor_window_size, 12), dtype=np.float32)
+            return np.zeros((self.robot_window_size, 12), dtype=np.float32)
 
         # Calculate robot state indices for the window
         # Robot states are at 100Hz, we need to sample a window around current action
         center_idx = idx * self.action_interval
-        start_idx = max(0, center_idx - self.sensor_window_size // 2)
-        end_idx = start_idx + self.sensor_window_size
+        start_idx = max(0, center_idx - self.robot_window_size // 2)
+        end_idx = start_idx + self.robot_window_size
 
         # Clip to available data
         end_idx = min(end_idx, len(self.robot_states))
         rw = self.robot_states[start_idx:end_idx]
 
         # Pad if necessary
-        if rw.shape[0] < self.sensor_window_size:
-            pad = np.zeros((self.sensor_window_size - rw.shape[0], 12), dtype=np.float32)
+        if rw.shape[0] < self.robot_window_size:
+            pad = np.zeros((self.robot_window_size - rw.shape[0], 12), dtype=np.float32)
             return np.concatenate([rw, pad], axis=0)
 
         return rw
@@ -697,7 +819,14 @@ class UnifiedVLADataset(Dataset):
         if start >= T_action:
             return np.zeros((self.horizon, 7), dtype=np.float32)
 
-        act = self.actions[start:min(end, T_action)]
+        act = self.actions[start:min(end, T_action)].copy() # Use .copy() to avoid modifying the source array
+
+        # Zero out last 5 actions
+        for i in range(len(act)):
+            current_frame_idx = start + i
+            if (T_action - current_frame_idx) <= 5:
+                act[i, :6] = 0.0
+
         if act.shape[0] < self.horizon:
             last = act[-1] if act.shape[0] > 0 else np.zeros((7,), dtype=np.float32)
             pad = np.tile(last, (self.horizon - act.shape[0], 1))
@@ -709,20 +838,28 @@ class UnifiedVLADataset(Dataset):
         actions = []
 
         for i in range(self.horizon):
-            start_pose_idx = (action_step + i) * self.action_interval
+            current_action_idx = action_step + i
+            start_pose_idx = current_action_idx * self.action_interval
             end_pose_idx = start_pose_idx + self.action_interval
 
             if end_pose_idx >= self.num_poses:
                 break
 
-            delta_pose = self.poses[end_pose_idx] - self.poses[start_pose_idx]
-            delta_action = np.concatenate([delta_pose, [1.0]], axis=0)
+            # Check if near the end of the episode
+            if (self.num_actions - current_action_idx) <= 5:
+                # If near the end, set movement to zero, keep gripper state (e.g., 1.0 for closed/active)
+                delta_action = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+            else:
+                delta_pose = self.poses[end_pose_idx] - self.poses[start_pose_idx]
+                delta_action = np.concatenate([delta_pose, [1.0]], axis=0)
+
             actions.append(delta_action)
 
         # Pad to fixed horizon
         if not actions:
             return np.zeros((self.horizon, 7), dtype=np.float32)
         elif len(actions) < self.horizon:
+            # When padding, use the last computed action. If the last action was a zero-action, padding will be zero.
             pad = np.tile(actions[-1], (self.horizon - len(actions), 1))
             actions = np.concatenate([actions, pad], axis=0)
 
@@ -741,12 +878,23 @@ def unified_collate_fn(batch):
         Dictionary with batched data
     """
     instructions = [b["instruction"] for b in batch]
-    image_lists = [b["images"] for b in batch]
+    
+    # Sanitize image lists to prevent errors with None values
+    image_lists_raw = [b.get("images") for b in batch]
+    image_lists = []
+    for sublist in image_lists_raw:
+        if sublist is None:
+            image_lists.append([])  # Replace top-level None with an empty list
+        else:
+            # Filter out any None paths within the sublist
+            sanitized_sublist = [item for item in sublist if item is not None]
+            image_lists.append(sanitized_sublist)
+
     vl_features = [b["vl_cache"] for b in batch]
 
     # Pad sensor data to max length
     sensor_tensors = [b["sensor_data"] for b in batch]
-    max_sensor_len = max(t.shape[0] for t in sensor_tensors)
+    max_sensor_len = max(t.shape[0] for t in sensor_tensors) if sensor_tensors else 0
     padded_sensors = []
     for sensor in sensor_tensors:
         if sensor.shape[0] < max_sensor_len:
@@ -755,11 +903,11 @@ def unified_collate_fn(batch):
             padded_sensors.append(torch.cat([sensor, pad], dim=0))
         else:
             padded_sensors.append(sensor)
-    sensor_data = torch.stack(padded_sensors, dim=0)
+    sensor_data = torch.stack(padded_sensors, dim=0) if padded_sensors else torch.empty(0)
 
     # Pad robot states to max length (same as sensor data)
     robot_state_tensors = [b["robot_states"] for b in batch]
-    max_robot_len = max(t.shape[0] for t in robot_state_tensors)
+    max_robot_len = max(t.shape[0] for t in robot_state_tensors) if robot_state_tensors else 0
     padded_robot_states = []
     for robot_state in robot_state_tensors:
         if robot_state.shape[0] < max_robot_len:
@@ -768,7 +916,7 @@ def unified_collate_fn(batch):
             padded_robot_states.append(torch.cat([robot_state, pad], dim=0))
         else:
             padded_robot_states.append(robot_state)
-    robot_states = torch.stack(padded_robot_states, dim=0)
+    robot_states = torch.stack(padded_robot_states, dim=0) if padded_robot_states else torch.empty(0)
 
     actions = torch.stack([b["actions"] for b in batch], dim=0)
     has_sensor_mask = torch.tensor([b["has_sensor"] for b in batch], dtype=torch.bool)
@@ -777,6 +925,8 @@ def unified_collate_fn(batch):
     vlm_indices = [b["vlm_idx"] for b in batch]
     reuse_steps = [b["reuse_step"] for b in batch]
     confidence = [b["confidence"] for b in batch]
+    prompt_hashes = [b.get("prompt_hash") for b in batch]
+    episode_ids = [b.get("episode_id") for b in batch]
 
     return {
         "instruction": instructions,
@@ -791,6 +941,8 @@ def unified_collate_fn(batch):
         "vlm_indices": vlm_indices,
         "reuse_steps": reuse_steps,
         "confidence": confidence,
+        "prompt_hash": prompt_hashes,
+        "episode_ids": episode_ids,
     }
 
 
@@ -801,6 +953,7 @@ def unified_collate_fn(batch):
 def create_unified_dataloader(
     old_dataset_patterns: List[str] = None,
     new_dataset_path: Optional[str] = None,
+    new_dataset_paths: Optional[List[str]] = None,
     old_weight: float = 1.0,
     new_weight: float = 3.0,
     batch_size: int = 4,
@@ -809,46 +962,58 @@ def create_unified_dataloader(
     horizon: int = 8,
     vlm_reuse_count: int = 3,
     sensor_window_size: int = 65,
+    robot_window_size: int = 100,
     action_expert_hz: int = 10,
     cache_root: str = "/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
     use_cache: bool = True,
+    use_augmentation: bool = False,
+    augmentation_prob: float = 0.10,
     distributed: bool = False,
     rank: int = 0,
     world_size: int = 1,
-    return_dataset: bool = False, # <-- Add this argument
+    return_dataset: bool = False,
+    # Ablation study arguments
+    views_to_use: Optional[List[int]] = None,
+    disable_sensor: bool = False,
+    disable_robot_state: bool = False,
+    cache_build_only: bool = False,
 ):
     """
     통합 데이터로더 생성
 
     Args:
-        old_dataset_patterns: Old format dataset patterns (glob)
-        new_dataset_path: New format dataset root path
-        old_weight: Weight for old datasets
-        new_weight: Weight for new datasets
-        batch_size: Batch size
-        num_workers: Number of workers
-        shuffle: Whether to shuffle
-        horizon: Action prediction horizon
-        vlm_reuse_count: VL feature reuse count
-        sensor_window_size: Sensor window size
-        action_expert_hz: Action expert frequency
-        cache_root: VL cache root
-        distributed: Whether to use distributed sampling
-        rank: Process rank (for distributed)
-        world_size: Total processes (for distributed)
-
-    Returns:
-        DataLoader
+        ... (기존 인자들)
+        views_to_use: 사용할 View 번호 리스트
+        disable_sensor: 센서 데이터 비활성화 여부
+        disable_robot_state: 로봇 상태 데이터 비활성화 여부
     """
     datasets = []
     dataset_weights = []
     track_weights = (not distributed) and shuffle and (old_weight != new_weight)
     old_sample_count = 0
     new_sample_count = 0
+    cache_hit_count = 0
+    cache_slot_count = 0
+
+    # Common dataset args
+    dataset_kwargs = {
+        "horizon": horizon,
+        "vlm_reuse_count": vlm_reuse_count,
+        "sensor_window_size": sensor_window_size,
+        "robot_window_size": robot_window_size,
+        "action_expert_hz": action_expert_hz,
+        "cache_root": cache_root,
+        "use_cache": use_cache,
+        "use_augmentation": use_augmentation,
+        "augmentation_prob": augmentation_prob,
+        "views_to_use": views_to_use,
+        "disable_sensor": disable_sensor,
+        "disable_robot_state": disable_robot_state,
+        "cache_build_only": cache_build_only,
+    }
 
     # Load old format datasets
     if old_dataset_patterns:
-        # print("📦 Loading old format datasets...")
         for pattern in old_dataset_patterns:
             expanded_paths = glob.glob(pattern)
             for traj_dir in expanded_paths:
@@ -856,54 +1021,56 @@ def create_unified_dataloader(
                     ds = UnifiedVLADataset(
                         data_dir=traj_dir,
                         format='old',
-                        horizon=horizon,
-                        vlm_reuse_count=vlm_reuse_count,
-                        sensor_window_size=sensor_window_size,
-                        action_expert_hz=action_expert_hz,
-                        cache_root=cache_root,
-                        use_cache=use_cache,
+                        **dataset_kwargs
                     )
                     datasets.append(ds)
                     old_sample_count += len(ds)
+                    if use_cache and hasattr(ds, "vl_cache_files"):
+                        cache_slot_count += len(ds.vl_cache_files)
+                        cache_hit_count += getattr(ds, "cache_found_count", 0)
                     if track_weights:
                         dataset_weights.extend([old_weight] * len(ds))
                 except Exception as e:
                     print(f"⚠️ Failed to load old dataset {traj_dir}: {e}")
 
     # Load new format datasets
+    new_paths_to_process = []
     if new_dataset_path:
-        # print("\n📦 Loading new format datasets...")
-        new_path = Path(new_dataset_path)
-        if new_path.exists():
-            for task_dir in new_path.iterdir():
-                if not task_dir.is_dir():
-                    continue
-                task_name = task_dir.name.replace('_', ' ')
-                instruction = f"Perform {task_name} insertion task"
+        new_paths_to_process.append(new_dataset_path)
+    if new_dataset_paths:
+        new_paths_to_process.extend(new_dataset_paths)
 
-                for episode_dir in task_dir.iterdir():
-                    if not episode_dir.is_dir() or not episode_dir.name.startswith('episode_'):
+    if new_paths_to_process:
+        for new_dataset_path_item in new_paths_to_process:
+            new_path = Path(new_dataset_path_item)
+            if new_path.exists():
+                for task_dir in new_path.iterdir():
+                    if not task_dir.is_dir():
                         continue
-                    try:
-                        ds = UnifiedVLADataset(
-                            data_dir=str(episode_dir),
-                            format='new',
-                            horizon=horizon,
-                            vlm_reuse_count=vlm_reuse_count,
-                            sensor_window_size=sensor_window_size,
-                            action_expert_hz=action_expert_hz,
-                            instruction=instruction,
-                            cache_root=cache_root,
-                            use_cache=use_cache,
-                        )
-                        datasets.append(ds)
-                        new_sample_count += len(ds)
-                        if track_weights:
-                            dataset_weights.extend([new_weight] * len(ds))
-                    except Exception as e:
-                        print(f"⚠️ Failed to load new dataset {episode_dir}: {e}")
-        else:
-            print(f"⚠️ New dataset path not found: {new_dataset_path}")
+                    task_name = task_dir.name.replace('_', ' ')
+                    instruction = f"Perform {task_name} insertion task"
+
+                    for episode_dir in task_dir.iterdir():
+                        if not episode_dir.is_dir() or not (episode_dir.name.startswith('episode_') or episode_dir.name.startswith('data_collection_')):
+                            continue
+                        try:
+                            ds = UnifiedVLADataset(
+                                data_dir=str(episode_dir),
+                                format='new',
+                                instruction=instruction,
+                                **dataset_kwargs
+                            )
+                            datasets.append(ds)
+                            new_sample_count += len(ds)
+                            if use_cache and hasattr(ds, "vl_cache_files"):
+                                cache_slot_count += len(ds.vl_cache_files)
+                                cache_hit_count += getattr(ds, "cache_found_count", 0)
+                            if track_weights:
+                                dataset_weights.extend([new_weight] * len(ds))
+                        except Exception as e:
+                            print(f"⚠️ Failed to load new dataset {episode_dir}: {e}")
+            else:
+                print(f"⚠️ New dataset path not found: {new_dataset_path_item}")
 
     if not datasets:
         raise ValueError("No datasets loaded!")
@@ -912,12 +1079,18 @@ def create_unified_dataloader(
 
     print(f"\n📊 Total dataset statistics:")
     print(f"   Total samples: {len(full_dataset)}")
+    print(f"   Total datasets: {len(datasets)}")
     print(f"   Old dataset samples: {old_sample_count}")
     print(f"   New dataset samples: {new_sample_count}")
     print(f"   Sampling ratio (new:old): {new_weight}:{old_weight}")
+    if use_cache and cache_slot_count > 0:
+        cache_ratio = cache_hit_count / cache_slot_count
+        print(f"   VL cache coverage: {cache_hit_count}/{cache_slot_count} ({cache_ratio:.2%})")
+
+    full_dataset.cache_hit_count = cache_hit_count
+    full_dataset.cache_slot_count = cache_slot_count
 
     if return_dataset:
-        # Add a num_old_samples and num_new_samples attribute to the dataset for logging
         full_dataset.num_old_samples = old_sample_count
         full_dataset.num_new_samples = new_sample_count
         return full_dataset
@@ -940,7 +1113,7 @@ def create_unified_dataloader(
         )
         shuffle = False
 
-    # Create dataloader with OPTIMIZED settings
+    # Create dataloader
     dataloader = DataLoader(
         full_dataset,
         batch_size=batch_size,
@@ -948,11 +1121,9 @@ def create_unified_dataloader(
         sampler=sampler,
         num_workers=num_workers,
         collate_fn=unified_collate_fn,
-        # ✅ OPTIMIZATION: Prefetch to keep GPU busy
-        prefetch_factor=4 if num_workers > 0 else None,  # Balance between memory and GPU utilization
+        prefetch_factor=4 if num_workers > 0 else None,
         persistent_workers=(num_workers > 0),
         pin_memory=True,
-        # ✅ OPTIMIZATION: Specify pin_memory_device for faster transfers
         pin_memory_device='cuda' if num_workers > 0 else '',
     )
 
@@ -990,6 +1161,7 @@ if __name__ == "__main__":
             if len(ds_old) > 0:
                 sample = ds_old[0]
                 print(f"   Instruction: {sample['instruction']}")
+                print(f"   Prompt Hash: {sample['prompt_hash']}")
                 print(f"   Sensor shape: {sample['sensor_data'].shape}")
                 print(f"   Actions shape: {sample['actions'].shape}")
                 print(f"   Has sensor: {sample['has_sensor']}")
@@ -1015,6 +1187,7 @@ if __name__ == "__main__":
             if len(ds_new) > 0:
                 sample = ds_new[0]
                 print(f"   Instruction: {sample['instruction']}")
+                print(f"   Prompt Hash: {sample['prompt_hash']}")
                 print(f"   Sensor shape: {sample['sensor_data'].shape}")
                 print(f"   Actions shape: {sample['actions'].shape}")
                 print(f"   Has sensor: {sample['has_sensor']}")

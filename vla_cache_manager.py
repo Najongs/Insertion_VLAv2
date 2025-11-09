@@ -1,15 +1,14 @@
 """
-VLA Cache Manager - 완전 고정 캐싱 시스템
+VLA Cache Manager - Prompt-Aware Caching System
 
-캐시 파일 이름 규칙:
-- Old format: {trajectory_name}_vlm{vlm_idx}.pt
-- New format: {episode_name}_vlm{vlm_idx}.pt
+Cache File Name Rule:
+- Path: {cache_dir}/{prompt_hash}/{dataset_name}_vlm{vlm_idx}.pt
+- The `prompt_hash` isolates caches based on the instruction content,
+  preventing conflicts when prompts are changed.
 
-예시:
-- recv_all_20251027_170308_vlm0.pt
-- episode_20251030_025119_vlm0.pt
-
-이렇게 하면 instruction이나 image path가 바뀌어도 캐시를 재사용할 수 있습니다.
+Example:
+- /cache/a1b2c3d4/recv_all_20251027_170308_vlm0.pt
+- /cache/e5f6g7h8/episode_20251030_025119_vlm0.pt
 """
 
 import hashlib
@@ -22,63 +21,63 @@ import torch
 
 class VLACacheManager:
     """
-    VLA 캐시 관리자 - 완전 고정 캐싱
+    VLA Cache Manager - Prompt-Aware Caching
 
     Features:
-    - 데이터셋 이름 + VLM index만으로 캐시 경로 생성
-    - Instruction, image path 변경에도 영향 없음
-    - Atomic save로 동시 접근 안전
-    - Cache limit으로 디스크 관리
+    - Creates versioned cache paths using a hash of the prompt.
+    - Atomic save for safe concurrent access.
+    - Manages disk space with a cache limit.
     """
 
     def __init__(
         self,
-        cache_dir: str = "/dev/shm/vla_cache",  # ✅ RAM disk 사용 (206MB, 26k files)
+        cache_dir: str = "/dev/shm/vla_cache",
         cache_limit_gb: float = 50.0,
     ):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_limit_gb = cache_limit_gb
 
+    def _raw_cache_path(self, dataset_name: str, vlm_idx: int, prompt_hash: str) -> Path:
+        return (self.cache_dir / prompt_hash) / f"{dataset_name}_vlm{vlm_idx}.pt"
+
     def get_cache_path(
         self,
         dataset_name: str,
         vlm_idx: int,
+        prompt_hash: str,
     ) -> Path:
         """
-        캐시 파일 경로 생성 (완전 고정)
-
-        Args:
-            dataset_name: 데이터셋 이름 (e.g., "recv_all_20251027_170308", "episode_20251030_025119")
-            vlm_idx: VLM index (e.g., 0, 10, 20, ...)
-
-        Returns:
-            캐시 파일 경로
+        Generate a prompt-aware cache file path, ensuring the directory exists.
         """
-        return self.cache_dir / f"{dataset_name}_vlm{vlm_idx}.pt"
+        versioned_dir = self.cache_dir / prompt_hash
+        versioned_dir.mkdir(parents=True, exist_ok=True)
+        return versioned_dir / f"{dataset_name}_vlm{vlm_idx}.pt"
 
     def cache_exists(
         self,
         dataset_name: str,
         vlm_idx: int,
+        prompt_hash: str,
     ) -> bool:
-        """캐시 파일 존재 여부 확인"""
-        cache_path = self.get_cache_path(dataset_name, vlm_idx)
+        """Check if a cache file exists for a given prompt hash."""
+        cache_path = self._raw_cache_path(dataset_name, vlm_idx, prompt_hash)
         return cache_path.exists()
 
     def load_cache(
         self,
         dataset_name: str,
         vlm_idx: int,
+        prompt_hash: str,
         device: str = "cpu",
     ) -> Optional[torch.Tensor]:
         """
-        캐시 로드
+        Load cache for a specific prompt hash.
 
         Returns:
-            캐시된 VL features (B, 1, vl_dim) 또는 None
+            Cached VL features tensor or None if not found.
         """
-        cache_path = self.get_cache_path(dataset_name, vlm_idx)
+        cache_path = self._raw_cache_path(dataset_name, vlm_idx, prompt_hash)
 
         if not cache_path.exists():
             return None
@@ -94,17 +93,13 @@ class VLACacheManager:
         self,
         dataset_name: str,
         vlm_idx: int,
+        prompt_hash: str,
         vl_features: torch.Tensor,
     ):
         """
-        캐시 저장 (atomic)
-
-        Args:
-            dataset_name: 데이터셋 이름
-            vlm_idx: VLM index
-            vl_features: VL features to cache (B, 1, vl_dim)
+        Save cache atomically for a specific prompt hash.
         """
-        cache_path = self.get_cache_path(dataset_name, vlm_idx)
+        cache_path = self.get_cache_path(dataset_name, vlm_idx, prompt_hash)
 
         # Atomic save with file lock
         self._atomic_save(vl_features.detach().to("cpu", dtype=torch.float16), cache_path)
@@ -118,39 +113,41 @@ class VLACacheManager:
         tmp = path.with_suffix(".pt.tmp")
         lock_path = str(path) + ".lock"
 
+        # Ensure parent directory exists
+        path.parent.mkdir(parents=True, exist_ok=True)
+
         with open(lock_path, "w") as lockfile:
             try:
                 fcntl.flock(lockfile, fcntl.LOCK_EX)
 
-                # Skip if already exists
                 if path.exists():
                     return
 
-                # Save to temp file
                 torch.save(tensor_cpu, tmp)
-
-                # Atomic move
                 os.replace(tmp, path)
 
             finally:
                 fcntl.flock(lockfile, fcntl.LOCK_UN)
+                # Clean up lock file
+                try:
+                    os.remove(lock_path)
+                except OSError:
+                    pass
 
     def _enforce_cache_limit(self):
-        """캐시 크기 제한 적용"""
+        """Apply cache size limit across all versioned subdirectories."""
         if self.cache_limit_gb <= 0:
             return
 
-        total_bytes = sum(f.stat().st_size for f in self.cache_dir.glob("*.pt"))
+        all_files = list(self.cache_dir.rglob("*.pt"))
+        total_bytes = sum(f.stat().st_size for f in all_files)
         limit_bytes = self.cache_limit_gb * (1024 ** 3)
 
         if total_bytes <= limit_bytes:
             return
 
-        # 오래된 파일부터 삭제
-        all_files = sorted(
-            self.cache_dir.glob("*.pt"),
-            key=lambda f: f.stat().st_mtime
-        )
+        # Sort files by modification time (oldest first)
+        all_files.sort(key=lambda f: f.stat().st_mtime)
 
         for file in all_files:
             if total_bytes <= limit_bytes:
@@ -163,59 +160,58 @@ class VLACacheManager:
                 continue
 
     def get_cache_stats(self) -> dict:
-        """캐시 통계 정보"""
-        cache_files = list(self.cache_dir.glob("*.pt"))
-        total_bytes = sum(f.stat().st_size for f in cache_files)
+        """Get statistics for the entire cache."""
+        all_files = list(self.cache_dir.rglob("*.pt"))
+        total_bytes = sum(f.stat().st_size for f in all_files)
         total_gb = total_bytes / (1024 ** 3)
 
         return {
             "cache_dir": str(self.cache_dir),
-            "total_files": len(cache_files),
+            "total_files": len(all_files),
             "total_size_gb": total_gb,
             "limit_gb": self.cache_limit_gb,
             "usage_percent": (total_gb / self.cache_limit_gb * 100) if self.cache_limit_gb > 0 else 0,
         }
 
     def clear_cache(self, confirm: bool = False):
-        """
-        모든 캐시 삭제
-
-        Args:
-            confirm: True로 설정해야 삭제 실행
-        """
+        """Clear the entire cache, including all subdirectories."""
         if not confirm:
             print("⚠️ Cache clear requires confirm=True")
             return
 
-        cache_files = list(self.cache_dir.glob("*.pt"))
-        for f in cache_files:
-            f.unlink(missing_ok=True)
-
-        print(f"✅ Cleared {len(cache_files)} cache files from {self.cache_dir}")
+        import shutil
+        shutil.rmtree(self.cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        print(f"✅ Cleared all cache files and subdirectories from {self.cache_dir}")
 
     def list_cached_datasets(self) -> dict:
-        """캐시된 데이터셋 목록"""
-        cache_files = list(self.cache_dir.glob("*.pt"))
-
-        datasets = {}
-        for f in cache_files:
-            # Parse filename: {dataset_name}_vlm{vlm_idx}.pt
-            name = f.stem
-            if "_vlm" in name:
-                dataset_name, vlm_part = name.rsplit("_vlm", 1)
-                try:
+        """List cached datasets grouped by prompt_hash."""
+        all_files = list(self.cache_dir.rglob("*.pt"))
+        
+        versioned_datasets = {}
+        for f in all_files:
+            try:
+                prompt_hash = f.parent.name
+                name = f.stem
+                if "_vlm" in name:
+                    dataset_name, vlm_part = name.rsplit("_vlm", 1)
                     vlm_idx = int(vlm_part)
-                    if dataset_name not in datasets:
-                        datasets[dataset_name] = []
-                    datasets[dataset_name].append(vlm_idx)
-                except ValueError:
-                    continue
+
+                    if prompt_hash not in versioned_datasets:
+                        versioned_datasets[prompt_hash] = {}
+                    if dataset_name not in versioned_datasets[prompt_hash]:
+                        versioned_datasets[prompt_hash][dataset_name] = []
+                    
+                    versioned_datasets[prompt_hash][dataset_name].append(vlm_idx)
+            except (ValueError, IndexError):
+                continue
 
         # Sort vlm indices
-        for dataset_name in datasets:
-            datasets[dataset_name] = sorted(datasets[dataset_name])
+        for prompt_hash, datasets in versioned_datasets.items():
+            for dataset_name in datasets:
+                datasets[dataset_name].sort()
 
-        return datasets
+        return versioned_datasets
 
 
 # Global cache manager instance
@@ -234,50 +230,73 @@ def get_cache_manager(
             cache_dir=cache_dir,
             cache_limit_gb=cache_limit_gb,
         )
+    # Allow re-configuration if needed
+    elif _cache_manager.cache_dir != Path(cache_dir):
+         _cache_manager = VLACacheManager(
+            cache_dir=cache_dir,
+            cache_limit_gb=cache_limit_gb,
+        )
 
     return _cache_manager
 
 
 if __name__ == "__main__":
-    print("🧪 Testing VLA Cache Manager...")
+    print("🧪 Testing VLA Cache Manager (Prompt-Aware)...")
 
     # Create cache manager
+    test_cache_dir = Path("/tmp/test_vla_cache_prompt_aware")
+    if test_cache_dir.exists():
+        import shutil
+        shutil.rmtree(test_cache_dir)
+
     cache_mgr = VLACacheManager(
-        cache_dir="/tmp/test_vla_cache",
+        cache_dir=str(test_cache_dir),
         cache_limit_gb=1.0,
     )
 
     # Test cache path generation
     print("\n📁 Cache path generation:")
-    path1 = cache_mgr.get_cache_path("recv_all_20251027_170308", 0)
-    path2 = cache_mgr.get_cache_path("episode_20251030_025119", 150)
-    print(f"   Old format: {path1.name}")
-    print(f"   New format: {path2.name}")
+    prompt1_hash = "a1b2c3d4"
+    prompt2_hash = "e5f6g7h8"
+    path1 = cache_mgr.get_cache_path("recv_all_data", 0, prompt1_hash)
+    path2 = cache_mgr.get_cache_path("episode_data", 150, prompt2_hash)
+    print(f"   Path 1: {path1}")
+    print(f"   Path 2: {path2}")
+    assert path1 == test_cache_dir / prompt1_hash / "recv_all_data_vlm0.pt"
+    assert path2 == test_cache_dir / prompt2_hash / "episode_data_vlm150.pt"
 
     # Test save and load
     print("\n💾 Save and load test:")
     test_features = torch.randn(1, 1, 3072)
-    cache_mgr.save_cache("test_dataset", 0, test_features)
-    print(f"   Saved: test_dataset_vlm0.pt")
+    cache_mgr.save_cache("test_dataset", 0, prompt1_hash, test_features)
+    print(f"   Saved to: {cache_mgr.get_cache_path('test_dataset', 0, prompt1_hash)}")
 
-    loaded = cache_mgr.load_cache("test_dataset", 0)
-    if loaded is not None:
-        print(f"   Loaded: {loaded.shape}")
-        print(f"   Match: {torch.allclose(test_features.cpu().float(), loaded.float(), rtol=1e-3)}")
+    loaded = cache_mgr.load_cache("test_dataset", 0, prompt1_hash)
+    assert loaded is not None, "Failed to load cache"
+    print(f"   Loaded: {loaded.shape}")
+    print(f"   Match: {torch.allclose(test_features.cpu().float(), loaded.float(), rtol=1e-3)}")
+
+    # Test loading non-existent cache
+    loaded_none = cache_mgr.load_cache("test_dataset", 0, prompt2_hash)
+    assert loaded_none is None, "Should not find cache for different prompt hash"
+    print("   ✅ Correctly returned None for non-existent cache.")
 
     # Test stats
     print("\n📊 Cache statistics:")
     stats = cache_mgr.get_cache_stats()
     for key, value in stats.items():
         print(f"   {key}: {value}")
+    assert stats['total_files'] == 1
 
     # Test list datasets
     print("\n📋 Cached datasets:")
     datasets = cache_mgr.list_cached_datasets()
-    for dataset_name, vlm_indices in datasets.items():
-        print(f"   {dataset_name}: {len(vlm_indices)} cached VLM features")
+    print(datasets)
+    assert prompt1_hash in datasets
+    assert "test_dataset" in datasets[prompt1_hash]
 
     # Cleanup
     cache_mgr.clear_cache(confirm=True)
+    assert not test_cache_dir.exists()
 
     print("\n✅ All tests passed!")

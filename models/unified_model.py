@@ -31,6 +31,7 @@ import torch.nn.functional as F
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 from peft import LoraConfig, get_peft_model
+from vla_cache_manager import get_cache_manager
 
 # Import Flow Matching
 from models.flow_matching import FlowMatchingActionExpert
@@ -840,7 +841,8 @@ class RegressionActionExpert(nn.Module):
             nhead=nhead,
             dim_feedforward=hidden_dim * 4,
             dropout=dropout,
-            batch_first=True
+            batch_first=True,
+            activation='gelu'
         )
         self.temporal_decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
@@ -974,6 +976,8 @@ class QwenVLAUnified(nn.Module):
                 horizon=8,
                 hidden_dim=1024,
                 cache_dir="/home/najo/NAS/VLA/dataset/cache/qwen_vl_features",
+                external_cache_root: Optional[str] = None,
+                auto_cache_backfill: bool = True,
 
                 # Sensor encoder params
                 sensor_enabled=True,
@@ -1032,6 +1036,17 @@ class QwenVLAUnified(nn.Module):
         self.horizon = horizon
         self.parallel_view_encoding = parallel_view_encoding  # ✅ New optimization flag
         self.view_aggregation = view_aggregation
+        self.auto_cache_backfill = auto_cache_backfill
+        self.external_cache_mgr = None
+        self.external_cache_root = None
+        if external_cache_root:
+            self.external_cache_root = str(external_cache_root)
+            try:
+                self.external_cache_mgr = get_cache_manager(cache_dir=self.external_cache_root)
+                if self.auto_cache_backfill:
+                    print(f"   Auto cache backfill enabled → {self.external_cache_root}")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize external cache manager ({external_cache_root}): {e}")
 
         print(f"🚀 Loading QwenVLA Unified Model")
         print(f"   Model Type: {model_type.upper()}")
@@ -1219,40 +1234,113 @@ class QwenVLAUnified(nn.Module):
 
     def _prepare_cached_vl_tokens(self, cached_batch, device: torch.device):
         """
-        Convert dataloader-provided VL cache tensors (list or tensor) into a single batch tensor.
-        Returns None if any item is missing so the caller can fall back to live encoding.
+        Convert dataloader-provided VL cache tensors into ready-to-use tensors.
+
+        Returns:
+            (Tensor, None): every sample already has cached tensors.
+            (List[Optional[Tensor]], List[int]): partial cache coverage.
+            (None, None): no usable cache tensors found.
         """
         if cached_batch is None:
-            return None
+            return None, None
 
         if isinstance(cached_batch, torch.Tensor):
-            tensors = [cached_batch]
-        elif isinstance(cached_batch, (list, tuple)):
-            tensors = []
-            for item in cached_batch:
-                if item is None:
-                    return None
-                if not isinstance(item, torch.Tensor):
-                    return None
-                tensors.append(item)
-        else:
-            return None
+            cached_batch = [cached_batch]
+        elif not isinstance(cached_batch, (list, tuple)):
+            return None, None
 
-        if not tensors:
-            return None
+        if len(cached_batch) == 0:
+            return None, None
 
         target_dtype = getattr(self, "model_dtype", torch.bfloat16)
         prepared = []
-        for tensor in tensors:
-            t = tensor
-            if t.ndim == 1:
-                t = t.view(1, 1, -1)
-            elif t.ndim == 2:
-                t = t.unsqueeze(0)
-            prepared.append(t.to(dtype=target_dtype))
+        missing_indices = []
+        has_tensor = False
 
-        batch_tensor = torch.cat(prepared, dim=0)
-        return batch_tensor.to(device=device, non_blocking=True)
+        for idx, item in enumerate(cached_batch):
+            if isinstance(item, torch.Tensor) and item.numel() > 0:
+                t = item
+                if t.ndim == 1:
+                    t = t.view(1, 1, -1)
+                elif t.ndim == 2:
+                    t = t.unsqueeze(0)
+                prepared.append(
+                    t.to(device=device, dtype=target_dtype, non_blocking=True)
+                )
+                has_tensor = True
+            else:
+                prepared.append(None)
+                missing_indices.append(idx)
+
+        if not has_tensor:
+            return None, None
+
+        if not missing_indices:
+            batch_tensor = torch.cat(prepared, dim=0)
+            return batch_tensor, None
+
+        return prepared, missing_indices
+
+    def _encode_missing_vl_features(self, text_inputs, image_inputs, cache_keys, indices, device):
+        """Encode VL features only for the specified indices."""
+        if not indices:
+            return {}
+
+        subset_texts = [text_inputs[i] for i in indices]
+        subset_images = [image_inputs[i] for i in indices]
+        subset_keys = [cache_keys[i] for i in indices]
+
+        subset_tokens = self._encode_vision_features(
+            subset_texts,
+            subset_images,
+            subset_keys,
+            use_cache=False,
+            device=device,
+        )
+
+        splits = torch.split(subset_tokens, 1, dim=0)
+        return {idx: tensor for idx, tensor in zip(indices, splits)}
+
+    def _backfill_external_cache(self, tokens_by_index, metadata):
+        """Persist freshly computed VL tokens into the shared cache directory."""
+        if not self.auto_cache_backfill or not self.external_cache_mgr:
+            return
+        if not tokens_by_index or not metadata:
+            return
+
+        dataset_names = metadata.get("dataset_names")
+        vlm_indices = metadata.get("vlm_indices")
+        prompt_hashes = metadata.get("prompt_hashes")
+        if not (dataset_names and vlm_indices and prompt_hashes):
+            return
+
+        for idx, tensor in tokens_by_index.items():
+            if tensor is None:
+                continue
+            try:
+                dataset_name = dataset_names[idx]
+                vlm_idx = int(vlm_indices[idx])
+                prompt_hash = prompt_hashes[idx]
+            except (TypeError, ValueError, IndexError):
+                continue
+
+            if dataset_name is None or prompt_hash is None:
+                continue
+
+            try:
+                if not hasattr(self, "_cache_backfill_notice"):
+                    print("🧷 Auto-building missing VL cache entries during training.")
+                    self._cache_backfill_notice = True
+                self.external_cache_mgr.save_cache(
+                    dataset_name=dataset_name,
+                    vlm_idx=vlm_idx,
+                    prompt_hash=prompt_hash,
+                    vl_features=tensor.detach(),
+                )
+            except Exception as e:
+                if not hasattr(self, "_cache_backfill_warned"):
+                    print(f"⚠️ Failed to backfill VL cache entry ({dataset_name}_vlm{vlm_idx}): {e}")
+                    self._cache_backfill_warned = True
 
     @staticmethod
     def _atomic_save(tensor_cpu: torch.Tensor, path: Path):
@@ -1311,7 +1399,8 @@ class QwenVLAUnified(nn.Module):
                 robot_states=None,  # NEW: Robot state data (joint + pose)
                 cache_keys=None,
                 cache: bool = True,
-                vl_cache_tokens=None):
+                vl_cache_tokens=None,
+                vl_cache_metadata=None):
         """
         Forward pass for both diffusion and regression
 
@@ -1332,18 +1421,49 @@ class QwenVLAUnified(nn.Module):
         """
         device = next(self.parameters()).device
 
-        # Try to leverage dataloader-provided VL cache tensors first
-        vl_tokens = self._prepare_cached_vl_tokens(vl_cache_tokens, device)
+        if text_inputs is None:
+            text_inputs = []
+        if image_inputs is None:
+            image_inputs = [[] for _ in range(len(text_inputs))]
+        elif len(image_inputs) < len(text_inputs):
+            image_inputs = list(image_inputs) + ([[]] * (len(text_inputs) - len(image_inputs)))
+        elif len(image_inputs) > len(text_inputs):
+            image_inputs = image_inputs[:len(text_inputs)]
+
+        batch_size = len(text_inputs)
+
+        if cache_keys is None:
+            cache_keys = [f"idx={i}" for i in range(batch_size)]
+
+        cached_result, missing_indices = self._prepare_cached_vl_tokens(vl_cache_tokens, device)
+        vl_tokens = None
+
+        if isinstance(cached_result, torch.Tensor):
+            vl_tokens = cached_result
+        elif isinstance(cached_result, list):
+            missing_indices = missing_indices or []
+            new_tokens = {}
+            if missing_indices:
+                new_tokens = self._encode_missing_vl_features(
+                    text_inputs,
+                    image_inputs,
+                    cache_keys,
+                    missing_indices,
+                    device,
+                )
+                self._backfill_external_cache(new_tokens, vl_cache_metadata)
+                for idx in missing_indices:
+                    cached_result[idx] = new_tokens.get(idx)
+
+            if all(t is not None for t in cached_result):
+                vl_tokens = torch.cat(cached_result, dim=0)
+
         if vl_tokens is not None and not hasattr(self, "_external_cache_confirmed"):
             print("💾 Using dataloader-provided VL cache tensors.")
             self._external_cache_confirmed = True
 
         if vl_tokens is None:
             use_cache = bool(cache and self.cache_enabled)
-            if cache_keys is None:
-                cache_keys = [f"idx={i}" for i in range(len(text_inputs))]
-
-            # Encode VL features (live path)
             vl_tokens = self._encode_vision_features(text_inputs, image_inputs, cache_keys, use_cache, device)
 
         # Encode sensor features
