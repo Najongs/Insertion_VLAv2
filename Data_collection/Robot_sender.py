@@ -466,10 +466,13 @@ def main():
                     (169.055308, -22.135383, 232.007663, 177.66655, 19.996871, 144.314525),
                 ])
                 manager.robot.SetJointVel(8)
-                noise = random.uniform(-5.0, 5.0)
+                noise = random.uniform(0.0, 5.0)
                 logging.info(f"Moving to noisy home position with noise: {noise:.2f}...")
                 # home_pose_noisy = (.0+noise, 0.0+noise, 0.0+noise, -5.0, 0.0, 30.0)
-                home_pose_noisy = (190, 1, 308, 0, 90, 0)
+                home_pose_noisy = (190+noise, 1+noise, 308+noise, 0+noise, 90+noise, 0+noise)
+                # move_angle_points = (0, 0, 0, 0, 0, 0)
+                # home_pose_noisy = (190, 1, 308, 0, 90, 0) # Keep fixed for consistency
+                # manager.move_angle_points([move_angle_points])
                 manager.move_EE_points([home_pose_noisy])
                 logging.info("Robot movements complete.")
 

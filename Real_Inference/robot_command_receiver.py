@@ -21,7 +21,7 @@ STATE_PUB_RATE_HZ = 100
 PAYLOAD_FORMAT = '<ddf12f'
 
 # === 로봇 시작 위치 ===
-HOME_JOINTS = [190, 1, 308, 0, 90, 0] # 안전한 시작을 위한 기본 홈 포지션 (관절 각도)
+HOME_JOINTS = [190, 1, 309, 1, 90, 0] # 안전한 시작을 위한 기본 홈 포지션 (관절 각도)
 # === 주기/워치독 ===
 CTRL_HZ   = 10.0
 CTRL_DT   = 1.0 / CTRL_HZ
